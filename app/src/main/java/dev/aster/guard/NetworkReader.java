@@ -112,6 +112,8 @@ public final class NetworkReader {
                 u.rx+=b.getRxBytes();
                 u.tx+=b.getTxBytes();
             }
+        } catch (android.os.RemoteException e) {
+            throw new IllegalStateException("Системная статистика сети временно недоступна", e);
         } finally {
             if(stats!=null) stats.close();
         }
