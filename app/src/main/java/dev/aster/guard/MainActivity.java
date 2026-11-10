@@ -59,7 +59,7 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         if (Build.VERSION.SDK_INT>=29) getWindow().setNavigationBarContrastEnforced(false);
-        lastScan=getPreferences(0).getLong("last_scan",0);
+        lastScan=0; // Results are not persisted: never present a stale clean scan after restart.
         root=new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
