@@ -62,6 +62,22 @@ public final class PcapInspector {
         return out;
     }
 
+    /**
+     * Observe one complete IP/Ethernet frame from a trusted local capture
+     * transport, without buffering original payload bytes.
+     * A caller never stores plaintext from packets to disk.
+     */
+    public static void observeFrame(byte[] bytes,int offset,int length,int link,Report report){
+        if(bytes==null||report==null||offset<0||length<0||
+           (long)offset+length>bytes.length||length>65535||
+           (link!=1&&link!=101)) {
+            if(report!=null)report.truncated++;
+            return;
+        }
+        report.packets++;
+        readPacket(bytes,offset,length,link,report);
+    }
+
     private static void readPacket(byte[] b,int off,int len,int link,Report r){
         int pos=off,end=off+len;
         int family=0;
