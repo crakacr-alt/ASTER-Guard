@@ -1,12 +1,19 @@
 package dev.aster.guard;
 
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
+import android.os.IBinder;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import rikka.shizuku.Shizuku;
 
-/** Optional, explicit-consent Shizuku integration. Never escalates privilege silently. */
+/**
+ * Shizuku user service is spawned only after an explicitly authorized action.
+ * Never executes free-form commands from a UI/user-provided string.
+ */
 public final class ShizukuBridge {
     public static final int REQUEST_CODE=2081;
     private ShizukuBridge(){}
@@ -21,41 +28,37 @@ public final class ShizukuBridge {
     public static String status(){
         if(!available())return "Shizuku не подключён — установите приложение и запустите сервер";
         if(!authorized())return "Shizuku запущен, разрешение ASTER Guard не предоставлено";
-        return "Shizuku подключён, доступ разрешён (права shell/ADB, не обязательно root)";
+        return "Shizuku подключён, разрешение предоставлено (ADB/shell не равно root)";
     }
-    /**
-     * Reads only allowlisted, non-mutating diagnostics. Captures at most 48KiB
-     * with a hard 4s process timeout. No caller-supplied shell commands.
-     */
-    @SuppressWarnings("deprecation")
-    public static String diagnostics(String type)throws Exception {
+    public static String diagnostics(Context context,String type)throws Exception {
         if(!authorized())throw new SecurityException("Сначала разрешите доступ Shizuku");
-        final String[] args;
+        final int code;
         switch(type){
-            case "processes": args=new String[]{"ps","-A","-o","PID,NAME,RSS"}; break;
-            case "memory": args=new String[]{"dumpsys","meminfo","-a"}; break;
-            case "activity": args=new String[]{"dumpsys","activity","processes"}; break;
-            default:throw new IllegalArgumentException("Неизвестная диагностическая команда");
+            case "processes":code=1;break;
+            case "memory":code=2;break;
+            case "activity":code=3;break;
+            default:throw new IllegalArgumentException("Неизвестная диагностика");
         }
-        Process p=Shizuku.newProcess(args,null,null);
-        try{
-            ByteArrayOutputStream output=new ByteArrayOutputStream();
-            InputStream in=p.getInputStream();
-            byte[] buf=new byte[2048];int count=0;
-            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);
-            while(count<48*1024&&System.nanoTime()<deadline){
-                if(in.available()==0){
-                    if(!p.isAlive())break;
-                    Thread.sleep(30);
-                    continue;
-                }
-                int n=in.read(buf,0,Math.min(buf.length,48*1024-count));
-                if(n<0)break;
-                output.write(buf,0,n);count+=n;
+        final CountDownLatch ready=new CountDownLatch(1);
+        final AtomicReference<IExecService> ref=new AtomicReference<>();
+        ServiceConnection conn=new ServiceConnection(){
+            @Override public void onServiceConnected(ComponentName name,IBinder binder) {
+                ref.set(IExecService.Stub.asInterface(binder));ready.countDown();
             }
-            if(p.isAlive())p.destroy();
-            String result=output.toString("UTF-8");
-            return result.isEmpty()?"Система не вернула данных или запретила команду":result;
-        }finally{p.destroy();}
+            @Override public void onServiceDisconnected(ComponentName name) {
+                ref.set(null);ready.countDown();
+            }
+        };
+        Shizuku.UserServiceArgs args=new Shizuku.UserServiceArgs(
+            new ComponentName(context.getPackageName(),ShizukuDiagnosticService.class.getName()))
+            .daemon(false).version(1).processNameSuffix("inspector");
+        Shizuku.bindUserService(args,conn);
+        try{
+            if(!ready.await(8,TimeUnit.SECONDS)||ref.get()==null)
+                throw new IllegalStateException("Служба Shizuku не ответила в течение 8 секунд");
+            return ref.get().inspect(code);
+        }finally{
+            try{Shizuku.unbindUserService(args,conn,true);}catch(Throwable ignored){}
+        }
     }
 }

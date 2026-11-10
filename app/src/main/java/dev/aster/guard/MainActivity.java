@@ -1,6 +1,7 @@
 package dev.aster.guard;
 
 import android.app.Activity;
+import java.io.InputStream;
 import android.app.NotificationManager;
 import android.content.pm.PackageManager;
 import android.content.pm.ApplicationInfo;
@@ -774,7 +775,7 @@ public final class MainActivity extends Activity {
         game.addView(text("По вашему нажатию ASTER может запросить разрешение «Не беспокоить» и снизить количество отвлечений. Автоматически завершать другие приложения или очищать системный кэш нельзя и не нужно.",13,MUTED,false),fill(13));
         game.addView(button(active?"Выключить игровой профиль":"Включить игровой профиль",true,v->toggleGameProfile()),fill(10));
         game.addView(button("Настройки батареи и энергосбережения",false,v->openSettings(Settings.ACTION_BATTERY_SAVER_SETTINGS)),fill(10));
-        game.addView(button("Управление памятью устройства",false,v->openSettings(Settings.ACTION_STORAGE_SETTINGS)),fill(10));
+        game.addView(button("Управление памятью устройства",false,v->openSettings(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)),fill(10));
         game.addView(button("Очистить только кэш ASTER Guard",false,v->clearOwnCache()));
         body.addView(game,fill(18));
 
@@ -843,7 +844,7 @@ public final class MainActivity extends Activity {
         Toast.makeText(this,"Shizuku: диагностика",Toast.LENGTH_SHORT).show();
         worker.execute(()->{
             try{
-                String text=ShizukuBridge.diagnostics(type);
+                String text=ShizukuBridge.diagnostics(getApplicationContext(),type);
                 runOnUiThread(()->showLong("ADB · "+type,text.length()>16000?text.substring(0,16000)+"\n… вывод сокращён":text));
             }catch(Exception e){runOnUiThread(()->showLong("Shizuku: отказ",e.toString()));}
         });
