@@ -4,6 +4,8 @@ mkdir -p reports/emulator
 echo "== Instrumented test suite =="
 gradle --no-daemon connectedDebugAndroidTest --stacktrace
 echo "== Cold start and memory snapshot (NOT physical battery/energy) =="
+# Gradle connected tests can uninstall app-under-test during cleanup.
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am force-stop dev.aster.guard || true
 adb shell am start -W -n dev.aster.guard/.MainActivity | tee reports/emulator/startup.txt
 sleep 3
