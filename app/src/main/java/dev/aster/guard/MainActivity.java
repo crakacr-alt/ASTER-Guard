@@ -63,6 +63,10 @@ public final class MainActivity extends Activity {
     private String updateError="";
     private final List<DeviceHealth.AppActivity> foregroundApps=new ArrayList<>();
     private static final int PCAP_PICKER=2082;
+    private static final int LIVE_START=2083, LIVE_STOP=2084;
+    private LiveCaptureSession liveSession;
+    private boolean liveAuthorized=false;
+    private String liveWarning="";
     private final Shizuku.OnRequestPermissionResultListener shizukuListener=(code,grant)->{
         if(code==ShizukuBridge.REQUEST_CODE && !isFinishing()){
             Toast.makeText(this,grant==PackageManager.PERMISSION_GRANTED?
@@ -107,6 +111,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         cancelled.set(true);
         try{Shizuku.removeRequestPermissionResultListener(shizukuListener);}catch(Throwable ignored){}
+        if(liveSession!=null)liveSession.close(); // PCAPdroid remains independently controlled by user.
         worker.shutdownNow();
         super.onDestroy();
     }
@@ -672,6 +677,26 @@ public final class MainActivity extends Activity {
         capture.addView(text("Импортируйте собственный PCAP. ASTER покажет IP:порт, незашифрованные DNS и HTTP Host, а также TLS SNI, если они есть в пакете. Это не живой VPN-сниффер и не расшифровка HTTPS.",13,MUTED,false),fill(13));
         capture.addView(button("Импортировать PCAP",false,v->pickPcap()));
         body.addView(capture,fill(18));
+        LinearLayout live=card();
+        live.addView(spaced("ЖИВОЙ ЗАХВАТ · PCAPDROID",11,MINT,true),fill(9));
+        live.addView(text("Захват по выбранному приложению",18,TEXT,true),fill(8));
+        live.addView(text("Используется установленный PCAPdroid с полноценной VPN-маршрутизацией. ASTER получает только краткие метаданные пакетов через локальный UDP. HTTPS не расшифровывается. PCAPdroid запросит согласие и покажет уведомление.",13,MUTED,false),fill(14));
+        if(liveSession!=null){
+            PcapInspector.Report snap=liveSession.snapshot();
+            String info="Пакетов: "+snap.packets+"   ·   TCP: "+snap.tcp+"   ·   UDP: "+snap.udp+
+                    "\nФильтр: "+(liveSession.filter().isEmpty()?"все приложения":liveSession.filter())+
+                    "\nDNS/SNI: "+snap.domains.size()+"   ·   IP:порт: "+snap.endpoints.size();
+            live.addView(text(info,13,TEXT,false),fill(10));
+            if(!liveSession.isRunning())live.addView(text("Локальный приём завершён. Захват PCAPdroid может продолжаться до ручного отключения.",12,AMBER,false),fill(10));
+            live.addView(button("Посмотреть сетевые адреса",false,v->showLiveReport()),fill(9));
+            live.addView(button("Остановить захват в PCAPdroid",true,v->stopLive()),fill(9));
+        }else{
+            live.addView(button("Выбрать приложение и начать",true,v->chooseLiveTarget()),fill(9));
+        }
+        if(!liveWarning.isEmpty())live.addView(text(liveWarning,12,AMBER,false));
+        live.addView(text("При выходе из ASTER локальный сбор прекращается. При необходимости остановите VPN также из уведомления PCAPdroid.",11,MUTED,false));
+        body.addView(live,fill(20));
+
         sectionLabel(body,"ТРАФИК ЗА 24 ЧАСА");
         if(!NetworkReader.hasUsageAccess(this)) {
             LinearLayout grant=card();
@@ -719,6 +744,54 @@ public final class MainActivity extends Activity {
     }
 
 
+    private void chooseLiveTarget(){
+        if(liveSession!=null){showLong("Захват","Завершите предыдущую сессию.");return;}
+        java.util.ArrayList<String> titles=new java.util.ArrayList<>();
+        java.util.ArrayList<String> targets=new java.util.ArrayList<>();
+        titles.add("Все приложения (без атрибуции UID)");targets.add("");
+        int cap=0;
+        for(AppRecord r:apps){
+            if(!r.system && cap++<80){titles.add(r.label+" · "+r.packageName);targets.add(r.packageName);}
+        }
+        new AlertDialog.Builder(this).setTitle("Что прослушивать?")
+            .setItems(titles.toArray(new String[0]),(dialog,index)->beginLive(targets.get(index)))
+            .setNegativeButton("Отмена",null).show();
+    }
+
+    private void beginLive(String packageName){
+        LiveCaptureSession receiver=new LiveCaptureSession();
+        try{
+            receiver.start(packageName); // bind before external VPN activity starts
+            liveSession=receiver;
+            liveAuthorized=false;liveWarning="";
+            startActivityForResult(LiveCaptureSession.controlIntent("start",packageName),LIVE_START);
+        }catch(Exception e){
+            receiver.close();liveSession=null;
+            new AlertDialog.Builder(this).setTitle("Нужен PCAPdroid")
+                .setMessage("Установите PCAPdroid из официального проекта. ASTER никогда не запускает собственный VPN, который может оборвать интернет.\n\n"+e.getClass().getSimpleName())
+                .setPositiveButton("Открыть проект",(d,w)->openExternal("https://github.com/emanuele-f/PCAPdroid/releases"))
+                .setNegativeButton("Закрыть",null).show();
+        }
+        if(tab==2)render();
+    }
+    private void stopLive(){
+        if(liveSession==null)return;
+        try{startActivityForResult(LiveCaptureSession.controlIntent("stop",null),LIVE_STOP);}
+        catch(Exception e){liveWarning="Не удалось отправить команду остановки: "+e;render();}
+    }
+    private void showLiveReport(){
+        if(liveSession==null)return;
+        PcapInspector.Report snap=liveSession.snapshot();
+        String report="Пакетов: "+snap.packets+
+            "\nTCP: "+snap.tcp+" / UDP: "+snap.udp+
+            "\nОшибок / пропусков: "+(snap.truncated+liveSession.dropped())+
+            "\n\nDNS и TLS SNI:\n"+join(snap.domains,65)+
+            "\n\nHTTP Host:\n"+join(snap.hosts,35)+
+            "\n\nIP и порты назначения:\n"+join(snap.endpoints.keySet(),100)+
+            "\n\n"+snap.note;
+        showLong("Живой сетевой анализ",report);
+    }
+
     private void pickPcap(){
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
@@ -727,6 +800,24 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int code,Intent data){
         super.onActivityResult(request,code,data);
+        if(request==LIVE_START){
+            liveAuthorized=code==RESULT_OK;
+            if(!liveAuthorized){
+                if(liveSession!=null)liveSession.close();
+                liveSession=null;
+                liveWarning="Захват отменён или PCAPdroid отказал.";
+            }else liveWarning="Захват запущен: откройте интересующее приложение, затем вернитесь к ASTER и нажмите «Посмотреть сетевые адреса».";
+            if(tab==2)render();
+            return;
+        }
+        if(request==LIVE_STOP){
+            if(code==RESULT_OK){
+                if(liveSession!=null)liveSession.close();
+                liveSession=null;liveAuthorized=false;liveWarning="Захват остановлен в PCAPdroid.";
+            }else liveWarning="PCAPdroid не подтвердил остановку. Откройте его уведомление и остановите захват вручную.";
+            if(tab==2)render();
+            return;
+        }
         if(request!=PCAP_PICKER||code!=RESULT_OK||data==null||data.getData()==null)return;
         final Uri uri=data.getData();
         Toast.makeText(this,"Разбор PCAP локально",Toast.LENGTH_SHORT).show();
