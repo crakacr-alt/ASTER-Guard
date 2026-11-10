@@ -21,7 +21,7 @@
 - Offline PCAP import: destination IP/ports, cleartext DNS/HTTP Host and TLS SNI where present. **Not** a live VPN sniffer or TLS decryptor.
 - One-shot battery temperature, thermal throttling status, RAM/storage snapshots, system/kernel/security patch and recommendations; optional Usage Access foreground time by app (not actual CPU/RAM).
 - Game profile with explicit Do Not Disturb permission and reversible toggling; own-app cache cleanup; never force-kills apps or falsely claims to free Android memory.
-- Android 6.0+ (API 23+). Java bytecode/dex only: works with ARMv7 32-bit and ARM64 64-bit, and other Android ABIs.
+- Android 7.0+ (API 24+). Java bytecode/dex only: works with ARMv7 32-bit and ARM64 64-bit, and other Android ABIs.
 
 ## Get an APK
 
@@ -62,7 +62,7 @@ Game profile can request Android Notification Policy access and switch interrupt
 
 ## Release readiness
 
-The CI APK remains a temporary-key debug build. Before calling it a production release, add a permanent secure signing key (held by the maintainer, not committed), reproducible release builds, instrumented tests on Android 6–16 including Samsung/MIUI, validated malware/benign accuracy metrics and false-positive review, SBOM, privacy review, performance/battery baselines, a robust per-app VPN networking engine with lossless packet forwarding and explicit user choice, and a maintained signed vulnerability feed. This project cannot match established antivirus products on detection without curated intelligence and real malware-corpus evaluation.
+The CI APK remains a temporary-key debug build. Before calling it a production release, add a permanent secure signing key (held by the maintainer, not committed), reproducible release builds, instrumented tests on Android 7–16 including Samsung/MIUI, validated malware/benign accuracy metrics and false-positive review, SBOM, privacy review, performance/battery baselines, a robust per-app VPN networking engine with lossless packet forwarding and explicit user choice, and a maintained signed vulnerability feed. This project cannot match established antivirus products on detection without curated intelligence and real malware-corpus evaluation.
 
 ## Review and tests
 

@@ -76,7 +76,7 @@ jobs:
           cat > release-notes.md <<'EOF'
           # ASTER Guard 0.3.0 · Test build
 
-          **Direct Android APK** is attached below. Minimum Android 6.0 (API 23); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
+          **Direct Android APK** is attached below. Minimum Android 6.0 (API 24); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
 
           Includes static DEX and split APK analysis, limited Maven/OSV checks with explicit permission, system health and battery/thermal statistics, Shizuku optional read-only diagnostics, PCAP import, safe game profile, and GitHub-on-launch update checks.
 
