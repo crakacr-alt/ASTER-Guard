@@ -19,7 +19,9 @@
 
 ## Get an APK
 
-Open **[GitHub Actions](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml)**, select a successful run and download the `ASTER-Guard-debug-apk` artifact. Extract the ZIP and install `app-debug.apk`.
+**[Download the Android APK directly from GitHub Releases](https://github.com/crakacr-alt/ASTER-Guard/releases/tag/v0.2.0-test)** — in *Assets*, tap **`ASTER-Guard-v0.2.0-debug.apk`**. This is a test build; the APK is directly downloadable without extracting the GitHub Actions ZIP.
+
+The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 
 Debug APK is signed with the standard ephemeral CI debug signing key. It is for **testing only**. A reproducible, trusted release needs a dedicated signing key under the project owner's control; **do not** treat debug artifacts as a verified production release.
 
