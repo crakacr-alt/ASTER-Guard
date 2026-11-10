@@ -59,32 +59,32 @@ jobs:
         with:
           name: ASTER-Guard-debug-apk
           path: release-files
-      - name: Publish v0.2.0 test release
+      - name: Publish v0.3.0 test release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.2.0-test"
-          APK="release-files/ASTER-Guard-v0.2.0-debug.apk"
+          TAG="v0.3.0-test"
+          APK="release-files/ASTER-Guard-v0.3.0-debug.apk"
           mv release-files/app-debug.apk "$APK"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already published; not replacing an existing versioned APK."
             exit 0
           fi
           cat > release-notes.md <<'EOF'
-          # ASTER Guard 0.2.0 · Test build
+          # ASTER Guard 0.3.0 · Test build
 
           **Direct Android APK** is attached below. Minimum Android 6.0 (API 23); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
 
-          Includes local, manual installed-app audit, heuristics, certificates/permissions, APK SHA-256 and basic network metadata/usage counters.
+          Includes static DEX and split APK analysis, limited Maven/OSV checks with explicit permission, system health and battery/thermal statistics, Shizuku optional read-only diagnostics, PCAP import, safe game profile, and GitHub-on-launch update checks.
 
-          **Not production-ready.** No threat-intelligence feeds, continuous real-time protection, HTTPS interception, or independent detection validation. User-initiated scan and opt-in Usage Access only. Please keep Android's existing security protections enabled.
+          **Not production-ready.** No continuous real-time protection, HTTPS decryption, arbitrary remote process debugger, packet-forwarding VPN sniffer, full CVE detection or independent detection validation. Keep Android security protections enabled.
 
           This APK is a **CI debug build**, signed with an ephemeral debug key. Future CI builds may require uninstall/reinstall due to signing differences. A production release needs a dedicated private signing key and physical-device testing.
 
           Source: https://github.com/crakacr-alt/ASTER-Guard
           EOF
-          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.2.0 · Android test APK" --notes-file release-notes.md --prerelease
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.3.0 · Android test APK" --notes-file release-notes.md --prerelease
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG"

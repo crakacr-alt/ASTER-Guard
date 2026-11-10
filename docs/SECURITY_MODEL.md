@@ -34,3 +34,15 @@ An embedded CA is not automatically trusted by modern Android applications. Even
 
 ## Testing needed before production
 Clean builds, unit tests, Android lint, on-device Android 6/8/10/12/14/15/16 tests, split APK coverage, battery profiling, file read failures, accessibility and TalkBack, actual false-positive rate, malware benchmarks and signed reproducible releases.
+
+
+## Version 0.3.0 additions
+
+- Shizuku is strictly opt-in. Permission dialog controlled by Shizuku; allowlisted read-only commands only, with timeout and size bounds.
+- GitHub updater performs a single outbound HTTPS request at app launch; it never downloads, installs, or replaces APKs automatically.
+- OSV.dev only receives exact Maven names and versions after explicit user approval; app code, telemetry, user-identifying data and APK files are not transmitted.
+- Static DEX parser uses capped byte reads and table validations. It reports references, not live execution.
+- Imported PCAP is inspected locally, with size/packet limits. It is not traffic capture, not per-app attribution, and does not decrypt TLS.
+- Health reports battery temperature (not CPU), Android thermal status, memory/storage and usage-foreground time. Shizuku process RSS can be stale or incomplete.
+- Game mode is user-initiated DND, not memory-killing or CPU tuning. Android may apply different policy semantics by OS build; always provide an off switch.
+- Target broad Android compatibility and data minimization; do not claim maliciousness, a CVE or exploitation without reproducible evidence.
