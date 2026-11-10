@@ -1,6 +1,12 @@
 package dev.aster.guard;
 
 import android.app.Activity;
+import android.app.NotificationManager;
+import android.content.pm.PackageManager;
+import android.content.pm.ApplicationInfo;
+import android.content.ContentResolver;
+import android.app.usage.UsageStatsManager;
+import rikka.shizuku.Shizuku;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.res.ColorStateList;
@@ -51,6 +57,18 @@ public final class MainActivity extends Activity {
     private LinearLayout root,body,appList;
     private int tab=0,scanDone=0,scanTotal=0,filter=0;
     private boolean scanning=false,loadingNetwork=false;
+    private boolean loadingForeground=false;
+    private UpdateChecker.Update newRelease;
+    private String updateError="";
+    private final List<DeviceHealth.AppActivity> foregroundApps=new ArrayList<>();
+    private static final int PCAP_PICKER=2082;
+    private final Shizuku.OnRequestPermissionResultListener shizukuListener=(code,grant)->{
+        if(code==ShizukuBridge.REQUEST_CODE && !isFinishing()){
+            Toast.makeText(this,grant==PackageManager.PERMISSION_GRANTED?
+                "Shizuku разрешён":"Shizuku не разрешён",Toast.LENGTH_SHORT).show();
+            render();
+        }
+    };
     private String query="",networkError="";
     private long lastScan=0;
 
@@ -72,10 +90,21 @@ public final class MainActivity extends Activity {
         }
         setContentView(root);
         render();
+        try{Shizuku.addRequestPermissionResultListener(shizukuListener);}catch(Throwable ignored){}
+        // Exactly one check per application launch, never a scheduled/background poll.
+        worker.execute(()->{
+            try{
+                UpdateChecker.Update release=UpdateChecker.check(getApplicationContext());
+                runOnUiThread(()->{if(!isFinishing()&&!isDestroyed()){newRelease=release;render();}});
+            }catch(Exception e){
+                updateError=e.getClass().getSimpleName();
+            }
+        });
     }
 
     @Override protected void onDestroy() {
         cancelled.set(true);
+        try{Shizuku.removeRequestPermissionResultListener(shizukuListener);}catch(Throwable ignored){}
         worker.shutdownNow();
         super.onDestroy();
     }
@@ -178,6 +207,7 @@ public final class MainActivity extends Activity {
         if(tab==0) showDashboard();
         else if(tab==1) showApps();
         else if(tab==2) showNetwork();
+        else if(tab==3) showSystem();
         else showSettings();
         navigation();
     }
@@ -210,6 +240,13 @@ public final class MainActivity extends Activity {
 
     private void showDashboard() {
         sectionTitle(body,"Обзор защиты","Проверка запускается только по вашему запросу");
+        if(newRelease!=null) {
+            LinearLayout update=card();
+            update.addView(text("Доступна новая версия: "+newRelease.version,16,MINT,true),fill(10));
+            update.addView(text("GitHub Releases · скачивание по вашему выбору",12,MUTED,false),fill(12));
+            update.addView(button("Открыть обновление",true,v->openExternal(newRelease.url)));
+            body.addView(update,fill(16));
+        }
         LinearLayout hero=column();
         hero.setPadding(dp(23),dp(22),dp(23),dp(22));
         GradientDrawable grad=new GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -421,7 +458,8 @@ public final class MainActivity extends Activity {
             }
             box.addView(text("● предоставлено   ○ не предоставлено / не применимо",11,MUTED,false),fill(20));
         }
-        box.addView(button("Глубокий анализ APK + SHA-256",true,v->deepAnalyze(r)),fill(10));
+        box.addView(button("Реверс-инжиниринг DEX и библиотек",true,v->reverseEngineer(r)),fill(10));
+        box.addView(button("Глубокий анализ APK + SHA-256",false,v->deepAnalyze(r)),fill(10));
         box.addView(button("Системная информация о приложении",false,v->{
             Intent i=new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:"+r.packageName));
@@ -462,6 +500,99 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+
+    private void reverseEngineer(AppRecord record) {
+        Toast.makeText(this,"Статический анализ APK запущен",Toast.LENGTH_SHORT).show();
+        worker.execute(()->{
+            try{
+                ApplicationInfo info=getPackageManager().getApplicationInfo(record.packageName,0);
+                List<String> paths=new ArrayList<>();
+                paths.add(info.sourceDir);
+                if(info.splitSourceDirs!=null)java.util.Collections.addAll(paths,info.splitSourceDirs);
+                ApkAuditor.Audit result=ApkAuditor.scan(paths.toArray(new String[0]));
+                runOnUiThread(()->{
+                    if(isFinishing()||isDestroyed())return;
+                    LinearLayout panel=column();
+                    panel.setPadding(dp(18),dp(12),dp(18),dp(14));
+                    String summary="Базовый APK SHA-256: "+result.mainSha256+
+                        "\nSplit APK: "+result.splitCount+
+                        "\nDEX: "+result.dex.dexFiles+
+                        "\nКлассы (идентификаторы): "+result.dex.classCount+
+                        "\nМетоды (идентификаторы): "+result.dex.methodIds+
+                        "\nНативных библиотек: "+result.nativeLibraries+
+                        "\nВложенные архивы: "+result.bundledApks;
+                    detailRow(panel,"Сводка",summary);
+                    detailRow(panel,"Семейства SDK (не подтверждённые версии)",join(result.dex.possibleLibs,20));
+                    detailRow(panel,"API, требующие проверки",join(result.dex.sensitiveApis,30));
+                    detailRow(panel,"URL-хосты в строках DEX (не фактические подключения)",join(result.dex.urls,48));
+                    detailRow(panel,"Классы (первые 35)",join(result.dex.classNames,35));
+                    detailRow(panel,"Методы (первые 45)",join(result.dex.methodNames,45));
+                    detailRow(panel,"Нативные .so (первые 25)",join(result.nativeNames,25));
+                    detailRow(panel,"Точные Maven-пакеты",join(result.exactMaven,15));
+                    detailRow(panel,"Ограничения",join(result.warnings,20));
+                    panel.addView(button("Проверить точные версии через OSV/CVE",true,
+                        v->{
+                            if(result.exactMaven.isEmpty()){
+                                Toast.makeText(this,"Нет достоверных координат зависимостей",Toast.LENGTH_LONG).show();
+                                return;
+                            }
+                            new AlertDialog.Builder(this).setTitle("Отправить версии в OSV.dev?")
+                                .setMessage("По вашему нажатию будут отправлены названия и версии до 10 Maven-библиотек. Код APK не отправляется. Уязвимости определяются только для точных совпадений.")
+                                .setNegativeButton("Отмена",null)
+                                .setPositiveButton("Проверить",(d,w)->checkOsv(result)).show();
+                        }),fill(12));
+                    ScrollView scroll=new ScrollView(this);
+                    scroll.addView(panel);
+                    AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Исследование APK (статически)")
+                        .setView(scroll).setPositiveButton("Закрыть",null).create();
+                    dialog.show();
+                    if(dialog.getWindow()!=null)dialog.getWindow().setLayout(
+                        getResources().getDisplayMetrics().widthPixels-dp(25),-2);
+                });
+            }catch(Exception e){
+                runOnUiThread(()->showLong("Не удалось разобрать APK",e.toString()));
+            }
+        });
+    }
+
+    private String join(java.util.Collection<?> values,int max){
+        if(values==null||values.isEmpty())return "Не найдено / недоступно";
+        StringBuilder sb=new StringBuilder();int i=0;
+        for(Object v:values){
+            if(i++>=max)break;
+            if(sb.length()>0)sb.append("\n");
+            sb.append("• ").append(v);
+        }
+        return sb.toString();
+    }
+    private void checkOsv(ApkAuditor.Audit audit){
+        Toast.makeText(this,"Запрос OSV выполняется",Toast.LENGTH_SHORT).show();
+        worker.execute(()->{
+            try{
+                List<OsvAdvisor.Finding> found=OsvAdvisor.query(new ArrayList<>(audit.exactMaven));
+                runOnUiThread(()->{
+                    if(isFinishing()||isDestroyed())return;
+                    if(found.isEmpty())showLong("OSV: совпадений нет",
+                        "Для распознанных точных версий база OSV не вернула идентификаторов уязвимостей. Это не доказывает безопасность остальных библиотек.");
+                    else{
+                        StringBuilder sb=new StringBuilder();
+                        for(OsvAdvisor.Finding x:found)sb.append(x.packageId).append("\n").append(x.ids).append("\n\n");
+                        sb.append("Проверьте детали каждой CVE/OSV вручную. Совпадение версии не всегда означает эксплуатируемость в данном APK.");
+                        showLong("Совпадения OSV",sb.toString());
+                    }
+                });
+            }catch(Exception e){runOnUiThread(()->showLong("OSV: ошибка",e.toString()));}
+        });
+    }
+    private void showLong(String title,String message){
+        if(isFinishing()||isDestroyed())return;
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+            .setPositiveButton("Закрыть",null).show();
+    }
+    private void openExternal(String url){
+        startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));
     }
 
     private void startScan() {
@@ -534,6 +665,11 @@ public final class MainActivity extends Activity {
         notice.addView(text("Android может показывать объёмы переданных данных по UID. Содержимое запросов, домены и HTTPS здесь не перехватываются.",13,MUTED,false));
         body.addView(notice,fill(20));
 
+        LinearLayout capture=card();
+        capture.addView(text("Анализ дампа сети · PCAP",17,TEXT,true),fill(8));
+        capture.addView(text("Импортируйте собственный PCAP. ASTER покажет IP:порт, незашифрованные DNS и HTTP Host, а также TLS SNI, если они есть в пакете. Это не живой VPN-сниффер и не расшифровка HTTPS.",13,MUTED,false),fill(13));
+        capture.addView(button("Импортировать PCAP",false,v->pickPcap()));
+        body.addView(capture,fill(18));
         sectionLabel(body,"ТРАФИК ЗА 24 ЧАСА");
         if(!NetworkReader.hasUsageAccess(this)) {
             LinearLayout grant=card();
@@ -580,12 +716,189 @@ public final class MainActivity extends Activity {
         });
     }
 
+
+    private void pickPcap(){
+        Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        startActivityForResult(i,PCAP_PICKER);
+    }
+    @Override protected void onActivityResult(int request,int code,Intent data){
+        super.onActivityResult(request,code,data);
+        if(request!=PCAP_PICKER||code!=RESULT_OK||data==null||data.getData()==null)return;
+        final Uri uri=data.getData();
+        Toast.makeText(this,"Разбор PCAP локально",Toast.LENGTH_SHORT).show();
+        worker.execute(()->{
+            try(InputStream input=getContentResolver().openInputStream(uri)){
+                if(input==null)throw new java.io.IOException("Файл не открылся");
+                PcapInspector.Report r=PcapInspector.parse(input);
+                String summary="Пакетов: "+r.packets+
+                    "\nIPv4: "+r.ipv4+" / IPv6: "+r.ipv6+
+                    "\nTCP: "+r.tcp+" / UDP: "+r.udp+
+                    "\nПовреждённых: "+r.truncated+
+                    "\n\nDNS / TLS SNI:\n"+join(r.domains,65)+
+                    "\n\nHTTP Host:\n"+join(r.hosts,35)+
+                    "\n\nНазначения IP:порт:\n"+join(r.endpoints.keySet(),120)+
+                    "\n\n"+r.note;
+                runOnUiThread(()->showLong("PCAP: направления трафика",summary));
+            }catch(Exception e){runOnUiThread(()->showLong("PCAP: ошибка",e.getMessage()));}
+        });
+    }
+
+    private void showSystem(){
+        sectionTitle(body,"Система","Тепловая нагрузка, ОЗУ, батарея и игровые настройки");
+        DeviceHealth.Snapshot m=DeviceHealth.snapshot(this);
+        LinearLayout snapshot=card();
+        snapshot.addView(spaced("ТЕЛЕФОН",11,MINT,true),fill(10));
+        snapshot.addView(text(m.model,18,TEXT,true),fill(12));
+        detailRow(snapshot,"Батарея",m.batteryPercent<0?"Недоступно":m.batteryPercent+"%"+(m.charging?" · зарядка":""));
+        detailRow(snapshot,"Температура аккумулятора",Float.isNaN(m.batteryC)?"Недоступно":String.format(Locale.getDefault(),"%.1f °C",m.batteryC));
+        detailRow(snapshot,"Тепловой статус системы",m.thermalStatus<0?"Недоступно":thermalLabel(m.thermalStatus));
+        detailRow(snapshot,"Оперативная память",formatSize(m.ramAvailable)+" свободно из "+formatSize(m.ramTotal));
+        detailRow(snapshot,"Внутренняя память",formatSize(m.storageAvailable)+" свободно из "+formatSize(m.storageTotal));
+        detailRow(snapshot,"Android / патч безопасности",Build.VERSION.RELEASE+" / "+m.patch);
+        detailRow(snapshot,"Ядро Linux",m.kernel);
+        detailRow(snapshot,"Uptime",m.uptimeMs/3600000+" ч");
+        body.addView(snapshot,fill(17));
+
+        sectionLabel(body,"РЕКОМЕНДАЦИИ");
+        LinearLayout advice=card();
+        for(String reason:m.advice)advice.addView(text("• "+reason,13,TEXT,false),fill(10));
+        advice.addView(text("Android не предоставляет обычным приложениям точный CPU/RAM каждого чужого процесса.",12,MUTED,false));
+        body.addView(advice,fill(18));
+
+        sectionLabel(body,"ИГРОВОЙ ПРОФИЛЬ");
+        LinearLayout game=card();
+        boolean active=getPreferences(0).getBoolean("game_profile",false);
+        game.addView(text(active?"Профиль помечен активным":"Безопасный игровой профиль",17,TEXT,true),fill(7));
+        game.addView(text("По вашему нажатию ASTER может запросить разрешение «Не беспокоить» и снизить количество отвлечений. Автоматически завершать другие приложения или очищать системный кэш нельзя и не нужно.",13,MUTED,false),fill(13));
+        game.addView(button(active?"Выключить игровой профиль":"Включить игровой профиль",true,v->toggleGameProfile()),fill(10));
+        game.addView(button("Настройки батареи и энергосбережения",false,v->openSettings(Settings.ACTION_BATTERY_SAVER_SETTINGS)),fill(10));
+        game.addView(button("Управление памятью устройства",false,v->openSettings(Settings.ACTION_STORAGE_SETTINGS)),fill(10));
+        game.addView(button("Очистить только кэш ASTER Guard",false,v->clearOwnCache()));
+        body.addView(game,fill(18));
+
+        sectionLabel(body,"АКТИВНОСТЬ ПРИЛОЖЕНИЙ · 24 ЧАСА");
+        LinearLayout activity=card();
+        activity.addView(text("Время на переднем плане ≠ загрузка CPU",14,TEXT,true),fill(8));
+        if(!NetworkReader.hasUsageAccess(this)){
+            activity.addView(text("Для статистики активности нужно разрешение «Доступ к использованию».",13,MUTED,false),fill(10));
+            activity.addView(button("Открыть доступ",false,v->openSettings(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
+        }else{
+            activity.addView(button(loadingForeground?"Считывание…":"Обновить активность",false,v->loadForeground()),fill(12));
+            for(DeviceHealth.AppActivity a:foregroundApps){
+                activity.addView(text(a.name+" · "+a.foregroundMs/60000+" мин",13,TEXT,false),fill(6));
+            }
+        }
+        body.addView(activity,fill(18));
+
+        sectionLabel(body,"SHIZUKU · ДОПОЛНИТЕЛЬНАЯ ДИАГНОСТИКА");
+        LinearLayout shizuku=card();
+        shizuku.addView(text(ShizukuBridge.status(),14,TEXT,true),fill(10));
+        shizuku.addView(text("Требуется установленный и запущенный Shizuku. Доступ ADB/shell может показать процессы и память; это не root и не настоящий debugger чужого приложения.",12,MUTED,false),fill(12));
+        if(!ShizukuBridge.available()){
+            shizuku.addView(button("Открыть Shizuku",false,v->openExternal("https://shizuku.rikka.app/")),fill(10));
+        }else if(!ShizukuBridge.authorized()){
+            shizuku.addView(button("Разрешить Shizuku",false,v->requestShizuku()),fill(10));
+        }else{
+            shizuku.addView(button("Процессы и RSS (ADB)",false,v->shizukuRead("processes")),fill(10));
+            shizuku.addView(button("Подробная память (ADB)",false,v->shizukuRead("memory")),fill(10));
+        }
+        body.addView(shizuku);
+    }
+    private String thermalLabel(int status){
+        switch(status){
+            case 0:return "Нормальный / ограничений нет";
+            case 1:return "Незначительный";
+            case 2:return "Умеренный";
+            case 3:return "Существенный";
+            case 4:return "Критический";
+            case 5:return "Аварийный";
+            case 6:return "Угроза выключения";
+            default:return "Код "+status;
+        }
+    }
+    private void loadForeground(){
+        if(loadingForeground)return;
+        loadingForeground=true;
+        worker.execute(()->{
+            List<DeviceHealth.AppActivity> values=DeviceHealth.foreground24h(getApplicationContext());
+            runOnUiThread(()->{
+                loadingForeground=false;foregroundApps.clear();foregroundApps.addAll(values);
+                if(tab==3)render();
+            });
+        });
+    }
+    private void openSettings(String action){
+        try{startActivity(new Intent(action));}
+        catch(Exception e){startActivity(new Intent(Settings.ACTION_SETTINGS));}
+    }
+    private void requestShizuku(){
+        try{
+            if(ShizukuBridge.available())Shizuku.requestPermission(ShizukuBridge.REQUEST_CODE);
+            else openExternal("https://shizuku.rikka.app/");
+        }catch(Throwable e){showLong("Shizuku",String.valueOf(e));}
+    }
+    private void shizukuRead(String type){
+        Toast.makeText(this,"Shizuku: диагностика",Toast.LENGTH_SHORT).show();
+        worker.execute(()->{
+            try{
+                String text=ShizukuBridge.diagnostics(type);
+                runOnUiThread(()->showLong("ADB · "+type,text.length()>16000?text.substring(0,16000)+"\n… вывод сокращён":text));
+            }catch(Exception e){runOnUiThread(()->showLong("Shizuku: отказ",e.toString()));}
+        });
+    }
+    private void toggleGameProfile(){
+        NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        if(nm==null)return;
+        if(!nm.isNotificationPolicyAccessGranted()){
+            new AlertDialog.Builder(this).setTitle("Доступ к режиму «Не беспокоить»")
+                .setMessage("ASTER может изменить настройки уведомлений только после явного разрешения Android. После этого повторно нажмите игровую кнопку.")
+                .setNegativeButton("Отмена",null)
+                .setPositiveButton("Настройки",(d,w)->openSettings(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)).show();
+            return;
+        }
+        boolean active=getPreferences(0).getBoolean("game_profile",false);
+        try{
+            if(!active){
+                getPreferences(0).edit()
+                    .putInt("before_game_dnd",nm.getCurrentInterruptionFilter())
+                    .putBoolean("game_profile",true).apply();
+                nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY);
+            }else{
+                // Restore only when the present filter looks like the one we requested.
+                if(nm.getCurrentInterruptionFilter()==NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+                    nm.setInterruptionFilter(getPreferences(0).getInt("before_game_dnd",NotificationManager.INTERRUPTION_FILTER_ALL));
+                getPreferences(0).edit().putBoolean("game_profile",false).apply();
+            }
+            render();
+        }catch(Exception e){showLong("Игровой режим",e.toString());}
+    }
+    private void clearOwnCache(){
+        java.io.File dir=getCacheDir();
+        long[] deleted=new long[1];
+        clearCacheRecursively(dir,deleted,0);
+        Toast.makeText(this,"Кэш ASTER: очищено "+formatSize(deleted[0]),Toast.LENGTH_LONG).show();
+    }
+    private void clearCacheRecursively(java.io.File dir,long[] total,int depth){
+        if(depth>8||dir==null)return;
+        java.io.File[] files=dir.listFiles();
+        if(files==null)return;
+        for(java.io.File f:files){
+            if(f.isDirectory())clearCacheRecursively(f,total,depth+1);
+            else{
+                long size=f.length();
+                if(f.delete())total[0]+=size;
+            }
+        }
+    }
+
     private void showSettings() {
         sectionTitle(body,"Настройки","Приватность и возможности ASTER Guard");
         LinearLayout privacy=card();
         privacy.addView(spaced("ПРИВАТНОСТЬ",11,MINT,true),fill(12));
         privacy.addView(text("Только локальный анализ",19,TEXT,true),fill(8));
-        privacy.addView(text("У приложения нет разрешения INTERNET. Сведения о пакетах, подписях и разрешениях остаются на устройстве. Отчёт передаётся только если вы сами нажмёте «Поделиться».",13,MUTED,false));
+        privacy.addView(text("Сканирование APK и PCAP проводится локально. Интернет используется при запуске для проверки GitHub Releases, а по вашему отдельному согласию — для запросов координат Maven-зависимостей в OSV.dev. Данные APK не загружаются.",13,MUTED,false));
         body.addView(privacy,fill(17));
 
         LinearLayout power=card();
@@ -597,12 +910,17 @@ public final class MainActivity extends Activity {
         LinearLayout limits=card();
         limits.addView(spaced("ОГРАНИЧЕНИЯ",11,AMBER,true),fill(12));
         limits.addView(text("Не заменяет полноценную антивирусную защиту",17,TEXT,true),fill(8));
-        limits.addView(text("Текущая версия не содержит проверенной базы вредоносного ПО, динамической песочницы, перехвата пакетов или дешифратора HTTPS. Android не предоставляет стороннему приложению бесконтрольный доступ к данным других приложений.",13,MUTED,false));
+        limits.addView(text("Нет динамического дебаггера чужих процессов, живого VPN-сниффера, расшифровки HTTPS и гарантированного поиска всех CVE ядра. Для полной диагностики требуются специализированные инструменты и контролируемые условия.",13,MUTED,false));
         body.addView(limits,fill(17));
 
         LinearLayout about=card();
-        about.addView(text("ASTER Guard 0.2.0",16,TEXT,true),fill(7));
+        about.addView(text("ASTER Guard 0.3.0",16,TEXT,true),fill(7));
         about.addView(text("Java · Android 6+ · arm32 / arm64 · без ABI-специфичных библиотек",12,MUTED,false),fill(11));
+        if(newRelease!=null){
+            about.addView(button("Доступно обновление "+newRelease.version,true,v->openExternal(newRelease.url)),fill(10));
+        }
+        about.addView(text("Проверка GitHub выполняется только при входе в приложение; установка APK — только по вашему действию.",12,MUTED,false),fill(9));
+        about.addView(button("Открыть релизы GitHub",false,v->openExternal("https://github.com/crakacr-alt/ASTER-Guard/releases")),fill(9));
         about.addView(button("Исходный код на GitHub",false,v->{
             startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/crakacr-alt/ASTER-Guard")));
         }));
@@ -613,8 +931,8 @@ public final class MainActivity extends Activity {
         LinearLayout nav=row();
         nav.setPadding(dp(12),dp(9),dp(12),dp(9));
         nav.setBackgroundColor(0xFF0E1420);
-        String[] icons={"◈","▣","⌁","⚙"};
-        String[] labels={"Обзор","Приложения","Сеть","О приложении"};
+        String[] icons={"◈","▣","⌁","◉","⚙"};
+        String[] labels={"Обзор","APK","Сеть","Система","Опции"};
         for(int i=0;i<4;i++) {
             final int index=i;
             LinearLayout item=column();
