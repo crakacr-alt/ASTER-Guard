@@ -635,6 +635,7 @@ public final class MainActivity extends Activity {
 
     private final class Ring extends View {
         private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect=new RectF();
         private float progress=1f;
         private boolean busy;
         private int metric;
@@ -647,7 +648,7 @@ public final class MainActivity extends Activity {
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             float w=getWidth(),h=getHeight(),stroke=dp(11),padding=dp(15);
-            RectF rect=new RectF(padding,padding,w-padding,h-padding);
+            rect.set(padding,padding,w-padding,h-padding);
             p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);
             p.setStrokeWidth(stroke);p.setColor(0xFF35445A);
             canvas.drawArc(rect,-90,360,false,p);
