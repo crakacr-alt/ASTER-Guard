@@ -14,6 +14,7 @@ public final class ShizukuDiagnosticService extends IExecService.Stub {
         if(code==1)args=new String[]{"ps","-A","-o","PID,NAME,RSS"};
         else if(code==2)args=new String[]{"dumpsys","meminfo","-a"};
         else if(code==3)args=new String[]{"dumpsys","activity","processes"};
+        else if(code==4)args=new String[]{"top","-b","-n","1","-m","60"};
         else throw new SecurityException("Команда запрещена");
         Process p=null;
         try{

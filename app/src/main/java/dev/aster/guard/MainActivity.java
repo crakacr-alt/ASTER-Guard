@@ -90,6 +90,7 @@ public final class MainActivity extends Activity {
             });
         }
         setContentView(root);
+        GameModeSession.restoreIfExpired(this);
         render();
         try{Shizuku.addRequestPermissionResultListener(shizukuListener);}catch(Throwable ignored){}
         // Exactly one check per application launch, never a scheduled/background poll.
@@ -770,9 +771,9 @@ public final class MainActivity extends Activity {
 
         sectionLabel(body,"ИГРОВОЙ ПРОФИЛЬ");
         LinearLayout game=card();
-        boolean active=getPreferences(0).getBoolean("game_profile",false);
+        boolean active=GameModeSession.active(this);
         game.addView(text(active?"Профиль помечен активным":"Безопасный игровой профиль",17,TEXT,true),fill(7));
-        game.addView(text("По вашему нажатию ASTER может запросить разрешение «Не беспокоить» и снизить количество отвлечений. Автоматически завершать другие приложения или очищать системный кэш нельзя и не нужно.",13,MUTED,false),fill(13));
+        game.addView(text("По вашему запросу ASTER включает режим «Не беспокоить» на срок до 90 минут и восстанавливает настройки. Android не позволяет безопасно «освободить ОЗУ» массовым завершением приложений.",13,MUTED,false),fill(13));
         game.addView(button(active?"Выключить игровой профиль":"Включить игровой профиль",true,v->toggleGameProfile()),fill(10));
         game.addView(button("Настройки батареи и энергосбережения",false,v->openSettings(Settings.ACTION_BATTERY_SAVER_SETTINGS)),fill(10));
         game.addView(button("Управление памятью устройства",false,v->openSettings(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)),fill(10));
@@ -802,6 +803,7 @@ public final class MainActivity extends Activity {
         }else if(!ShizukuBridge.authorized()){
             shizuku.addView(button("Разрешить Shizuku",false,v->requestShizuku()),fill(10));
         }else{
+            shizuku.addView(button("CPU: снимок TOP через ADB",false,v->shizukuRead("cpu")),fill(10));
             shizuku.addView(button("Процессы и RSS (ADB)",false,v->shizukuRead("processes")),fill(10));
             shizuku.addView(button("Подробная память (ADB)",false,v->shizukuRead("memory")),fill(10));
         }
@@ -850,28 +852,22 @@ public final class MainActivity extends Activity {
         });
     }
     private void toggleGameProfile(){
+        if(GameModeSession.active(this)){
+            GameModeSession.stop(this);render();return;
+        }
         NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         if(nm==null)return;
         if(!nm.isNotificationPolicyAccessGranted()){
-            new AlertDialog.Builder(this).setTitle("Доступ к режиму «Не беспокоить»")
-                .setMessage("ASTER может изменить настройки уведомлений только после явного разрешения Android. После этого повторно нажмите игровую кнопку.")
+            new AlertDialog.Builder(this).setTitle("Разрешение «Не беспокоить»")
+                .setMessage("Для включения безопасного игрового профиля нужно вручную разрешить изменение режима уведомлений.")
                 .setNegativeButton("Отмена",null)
-                .setPositiveButton("Настройки",(d,w)->openSettings(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)).show();
+                .setPositiveButton("Открыть настройки",(d,w)->openSettings(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                .show();
             return;
         }
-        boolean active=getPreferences(0).getBoolean("game_profile",false);
         try{
-            if(!active){
-                getPreferences(0).edit()
-                    .putInt("before_game_dnd",nm.getCurrentInterruptionFilter())
-                    .putBoolean("game_profile",true).apply();
-                nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY);
-            }else{
-                // Restore only when the present filter looks like the one we requested.
-                if(nm.getCurrentInterruptionFilter()==NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-                    nm.setInterruptionFilter(getPreferences(0).getInt("before_game_dnd",NotificationManager.INTERRUPTION_FILTER_ALL));
-                getPreferences(0).edit().putBoolean("game_profile",false).apply();
-            }
+            GameModeSession.start(this);
+            clearOwnCache(); // Only ASTER's own temporary cache; not system RAM.
             render();
         }catch(Exception e){showLong("Игровой режим",e.toString());}
     }

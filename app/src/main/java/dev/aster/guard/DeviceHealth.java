@@ -66,6 +66,14 @@ public final class DeviceHealth {
             if(Build.VERSION.SDK_INT>=29)s.thermalStatus=power.getCurrentThermalStatus();
         }
 
+        try{
+            if(s.patch.matches("\\d{4}-\\d{2}-\\d{2}")){
+                String[] p=s.patch.split("-");
+                int months=(java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)-Integer.parseInt(p[0]))*12
+                    +(java.util.Calendar.getInstance().get(java.util.Calendar.MONTH)+1-Integer.parseInt(p[1]));
+                if(months>6)s.advice.add("Указанный патч Android старше 6 месяцев. Проверьте обновления производителя; это не доказательство уязвимости ядра.");
+            }
+        }catch(Exception ignored){}
         if(s.lowMemory)s.advice.add("Android сообщает о дефиците ОЗУ. Закройте ненужные тяжёлые приложения вручную; система сама управляет кэшем.");
         if(s.thermalStatus>=PowerManager.THERMAL_STATUS_SEVERE)
             s.advice.add("Тепловое ограничение высокое: снизьте нагрузку, уберите телефон из чехла, прекратите зарядку во время игры.");

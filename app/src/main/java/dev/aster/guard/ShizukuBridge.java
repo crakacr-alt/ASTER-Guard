@@ -37,6 +37,7 @@ public final class ShizukuBridge {
             case "processes":code=1;break;
             case "memory":code=2;break;
             case "activity":code=3;break;
+            case "cpu":code=4;break;
             default:throw new IllegalArgumentException("Неизвестная диагностика");
         }
         final CountDownLatch ready=new CountDownLatch(1);

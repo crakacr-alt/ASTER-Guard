@@ -1,6 +1,6 @@
 # ASTER Guard
 
-**ASTER Guard 0.3.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
+**ASTER Guard 0.3.1** — lightweight, privacy-first Android app auditor with a modern native dark UI.
 
 > **This is an experimental security *auditor*, not a validated malware scanner.** It cannot guarantee detection, replace Play Protect, isolate threats, or inspect encrypted HTTPS payloads.
 
@@ -25,7 +25,7 @@
 
 ## Get an APK
 
-**[Download the Android APK directly from GitHub Releases](https://github.com/crakacr-alt/ASTER-Guard/releases/tag/v0.3.0-test)** — in *Assets*, tap **`ASTER-Guard-v0.3.0-debug.apk`**. This is a test build; the APK is directly downloadable without extracting the GitHub Actions ZIP.
+**[Download the Android APK directly from GitHub Releases](https://github.com/crakacr-alt/ASTER-Guard/releases/tag/v0.3.1-test)** — in *Assets*, tap **`ASTER-Guard-v0.3.1-debug.apk`**. This is a test build; the APK is directly downloadable without extracting the GitHub Actions ZIP.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 
@@ -54,9 +54,9 @@ The debug APK is produced under `app/build/outputs/apk/debug/`. There are no nat
 
 ## What optimization really means
 
-Game profile can request Android Notification Policy access and switch interruptions to priority-only **when you tap enable**. Tap disable to restore the prior setting if unchanged. Android 15+ may apply an app-owned automatic zen rule instead. It never auto-kills other apps; clearing RAM often leads to extra reloads. The "clean cache" action only deletes ASTER's own cache and does not promise FPS gains.
+Game profile can request Android Notification Policy access and switch interruptions to priority-only **when you tap enable**. A one-shot inexact alarm tries to restore the previous setting after 90 minutes (may run late under Doze); reopening ASTER also checks expiry. Tap disable manually to restore sooner. The previous setting is restored only if it still matches the profile's expected state. Android 15+ may apply an app-owned automatic zen rule instead. It never auto-kills other apps; clearing RAM often leads to extra reloads. The "clean cache" action only deletes ASTER's own cache and does not promise FPS gains.
 
-**Per-app load:** without privileged tracing, Android does not expose reliable instantaneous CPU/RAM figures for arbitrary third-party apps. The Usage Access list reports foreground duration, Shizuku's optional process shell report includes RSS/meminfo; these must not be interpreted as accurate CPU percentage or a live debugger.
+**Per-app load:** without privileged tracing, Android does not expose reliable instantaneous CPU/RAM figures for arbitrary third-party apps. The Usage Access list reports foreground duration, Shizuku's optional shell diagnostics provide a live snapshot of `top` CPU counters and `ps` RSS/meminfo; these must not be interpreted as accurate CPU percentage or a live debugger.
 
 **Kernel CVE checks:** a Linux kernel version or Android security-patch string alone cannot prove a CVE is present, because OEMs backport fixes. The app reports build and patch data, not fabricated CVE matches.
 
