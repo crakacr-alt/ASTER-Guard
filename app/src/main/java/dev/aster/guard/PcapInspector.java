@@ -108,6 +108,7 @@ public final class PcapInspector {
         }
     }
     private static void transport(byte[] b,int pos,int end,int proto,String ip,Report out){
+        if(proto!=6&&proto!=17)return;
         if(pos+8>end)return;
         int sourcePort=u16(b,pos),destPort=u16(b,pos+2);
         if(out.endpoints.size()<200){
