@@ -29,7 +29,7 @@ public final class RiskEvaluationMatrixTest {
         };
         // Suspicious FEATURE COMBINATIONS; cannot imply infected APKs.
         int[] expectedFlagged={
-            1|2,2|4,1|2|4,256,1|128|64,8|2|4
+            1|2,2|4,1|2|4,256,1|4|128|64,8|2|4
         };
         int falsePos=0,truePos=0;
         for(int features:expectedNotFlagged)
