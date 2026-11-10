@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY"/>
+    <!-- Explicit package visibility for consent-driven PCAPdroid integration. -->
+    <queries><package android:name="com.emanuelef.remote_capture"/></queries>
     <application
         android:label="ASTER Guard"
         android:icon="@drawable/ic_shield"

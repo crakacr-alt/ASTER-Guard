@@ -37,6 +37,22 @@ jobs:
         if: failure()
         run: |
           cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt || true
+      - name: Generate dependency inventory and APK SHA-256
+        run: |
+          mkdir -p reports/build
+          gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath > reports/build/dependencies.txt
+          cd app/build/outputs/apk/debug
+          sha256sum app-debug.apk > app-debug.apk.sha256
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ASTER-Guard-build-evidence
+          path: |
+            reports/build/
+            app/build/test-results/
+            app/build/reports/lint-results-debug.html
+          retention-days: 30
       - name: Publish debug APK
         if: success()
         uses: actions/upload-artifact@v4
@@ -46,10 +62,55 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  emulator-smoke:
+    name: Android emulator smoke · API ${{ matrix.api-level }}
+    needs: verify-and-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [29, 35]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run real Android framework tests and collect metrics
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          emulator-boot-timeout: 600
+          script: bash scripts/emulator-smoke.sh
+      - name: Publish emulator test and performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ASTER-Guard-emulator-api-${{ matrix.api-level }}
+          path: |
+            reports/emulator/
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          retention-days: 30
+
   publish-github-release:
     name: Publish test APK to GitHub Releases
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify-and-build
+    needs: [verify-and-build, emulator-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -59,32 +120,32 @@ jobs:
         with:
           name: ASTER-Guard-debug-apk
           path: release-files
-      - name: Publish v0.3.1 test release
+      - name: Publish v0.4.0 test release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.3.1-test"
-          APK="release-files/ASTER-Guard-v0.3.1-debug.apk"
+          TAG="v0.4.0-test"
+          APK="release-files/ASTER-Guard-v0.4.0-debug.apk"
           mv release-files/app-debug.apk "$APK"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already published; not replacing an existing versioned APK."
             exit 0
           fi
           cat > release-notes.md <<'EOF'
-          # ASTER Guard 0.3.1 · Test build
+          # ASTER Guard 0.4.0 · Test build
 
-          **Direct Android APK** is attached below. Minimum Android 6.0 (API 24); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
+          **Direct Android APK** is attached below. Minimum Android 7.0 (API 24); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
 
-          Includes static DEX and split APK analysis, limited Maven/OSV checks with explicit permission, system health and battery/thermal statistics, Shizuku optional read-only diagnostics, PCAP import, safe game profile, and GitHub-on-launch update checks.
+          Includes the previous security analyzer features, explicit-consent live packet metadata capture through the separately installed PCAPdroid VPN engine, offline PCAP, optional Shizuku, and an emulator-tested smoke suite. Captures are bounded and metadata-only by default.
 
-          **Not production-ready.** No continuous real-time protection, HTTPS decryption, arbitrary remote process debugger, packet-forwarding VPN sniffer, full CVE detection or independent detection validation. Keep Android security protections enabled.
+          **Not production-ready.** Network capture requires the PCAPdroid companion; ASTER does not embed a VPN stack. HTTPS payloads are not decrypted. No real malware-corpus accuracy or measured physical-device power evidence exists. Keep Android protections enabled.
 
-          This APK is a **CI debug build**, signed with an ephemeral debug key. Future CI builds may require uninstall/reinstall due to signing differences. A production release needs a dedicated private signing key and physical-device testing.
+          This APK remains a **CI debug build** with an ephemeral key. The maintainer requested NO production signing-key setup. Reinstallation may be needed between builds. GitHub Actions runs host tests, Android lint and Android 10/15 emulator smoke checks before publishing.
 
           Source: https://github.com/crakacr-alt/ASTER-Guard
           EOF
-          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.3.1 · Android test APK" --notes-file release-notes.md --prerelease
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.4.0 · Android test APK" --notes-file release-notes.md --prerelease
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG"

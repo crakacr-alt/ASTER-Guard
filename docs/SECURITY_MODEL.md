@@ -46,3 +46,14 @@ Clean builds, unit tests, Android lint, on-device Android 6/8/10/12/14/15/16 tes
 - Health reports battery temperature (not CPU), Android thermal status, memory/storage and usage-foreground time. Shizuku process RSS can be stale or incomplete.
 - Game mode is user-initiated DND, not memory-killing or CPU tuning. Android may apply different policy semantics by OS build; always provide an off switch.
 - Target broad Android compatibility and data minimization; do not claim maliciousness, a CVE or exploitation without reproducible evidence.
+
+
+## Version 0.4.0 live capture risk assessment
+
+- ASTER does not implement VpnService or bind/route IP traffic. It uses the documented PCAPdroid CaptureCtrl API and explicitly requires a separately installed third-party companion. PCAPdroid handles TCP/UDP forwarding.
+- The user sees PCAPdroid's own consent UI and VPN notification. VPN conflicts and Android's one-VPN limitation are disclosed before capture.
+- ASTER's UDP receiver is bound to 127.0.0.1; parsed frames are immediately discarded; only bounded IP/destination and cleartext DNS/SNI metadata are kept in RAM.
+- No auto-installation of CA, no MITM, no arbitrary app process intrusion, no TLS plaintext extraction.
+- The local listener terminates after three minutes or 35k frames; PCAPdroid may continue capturing, and must be stopped by its notification or ASTER's Stop action.
+- PCAPdroid integration is optional and is NOT part of the APK's dependency graph. The third-party app's distribution, privacy policy and maintenance are independent.
+- Android emulator tests cannot validate physical ARM32/ARM64 compatibility, safe coexistence with other VPNs, or real power consumption.

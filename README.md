@@ -1,6 +1,6 @@
 # ASTER Guard
 
-**ASTER Guard 0.3.1** — lightweight, privacy-first Android app auditor with a modern native dark UI.
+**ASTER Guard 0.4.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
 
 > **This is an experimental security *auditor*, not a validated malware scanner.** It cannot guarantee detection, replace Play Protect, isolate threats, or inspect encrypted HTTPS payloads.
 
@@ -14,18 +14,19 @@
 - Active network transport, DNS servers, private DNS, proxy and VPN status.
 - Per-UID receive/transmit counters for the last 24h when Android Usage Access is granted (Wi-Fi and mobile; batched system queries).
 - Dark UI, risk filters, app details, shareable text report.
-- No background services or scheduled network checks. Internet access only for GitHub release check **on app launch** and opt-in OSV Maven version checks.
+- No resident background scan services or scheduled network checks. Internet access only for GitHub release check **on app launch** and opt-in OSV Maven version checks.
 - Optional Shizuku integration, with explicit user permission and allowlisted read-only commands to inspect process/memory snapshots; ADB privileges are not root.
 - On-demand DEX class/method identifiers, embedded SDK families (versions may be unknown), split APK and native-library inventory, and code-string URL hosts; **not** source reconstruction or live debugging.
 - Limited exact-version Maven dependency OSV.dev lookup on user action only. No CVE guesses from unnamed/versionless SDKs.
-- Offline PCAP import: destination IP/ports, cleartext DNS/HTTP Host and TLS SNI where present. **Not** a live VPN sniffer or TLS decryptor.
+- **Live, consent-driven packet metadata mode** via the officially documented PCAPdroid companion API. PCAPdroid must be separately installed and authorized by the user: it operates the actual packet-forwarding local VPN. ASTER binds a loopback-only UDP listener, requests a short, limited PCAP stream, and extracts destinations/DNS/SNI of a selected package in memory. ASTER has **no built-in VPN**, does not upload payloads or decrypt HTTPS, and never establishes a broken TUN interface.
+- Offline PCAP import: destination IP/ports, cleartext DNS/HTTP Host and TLS SNI where present. Not a TLS decryptor.
 - One-shot battery temperature, thermal throttling status, RAM/storage snapshots, system/kernel/security patch and recommendations; optional Usage Access foreground time by app (not actual CPU/RAM).
 - Game profile with explicit Do Not Disturb permission and reversible toggling; own-app cache cleanup; never force-kills apps or falsely claims to free Android memory.
 - Android 7.0+ (API 24+). Java bytecode/dex only: works with ARMv7 32-bit and ARM64 64-bit, and other Android ABIs.
 
 ## Get an APK
 
-**[Download the Android APK directly from GitHub Releases](https://github.com/crakacr-alt/ASTER-Guard/releases/tag/v0.3.1-test)** — in *Assets*, tap **`ASTER-Guard-v0.3.1-debug.apk`**. This is a test build; the APK is directly downloadable without extracting the GitHub Actions ZIP.
+**[Download the Android APK directly from GitHub Releases](https://github.com/crakacr-alt/ASTER-Guard/releases/tag/v0.4.0-test)** — in *Assets*, tap **`ASTER-Guard-v0.4.0-debug.apk`**. This is a test build; the APK is directly downloadable without extracting the GitHub Actions ZIP.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 
@@ -60,9 +61,23 @@ Game profile can request Android Notification Policy access and switch interrupt
 
 **Kernel CVE checks:** a Linux kernel version or Android security-patch string alone cannot prove a CVE is present, because OEMs backport fixes. The app reports build and patch data, not fabricated CVE matches.
 
+## Live capture with PCAPdroid
+1. Install [PCAPdroid](https://github.com/emanuele-f/PCAPdroid/releases) separately (external application, author Emanuele Faranda).
+2. In ASTER select **Network → Choose application and start**, select an installed app or All Apps. PCAPdroid asks for consent (and may replace your existing VPN; Android generally allows only one active VPN).
+3. Visit the selected app, return to ASTER, choose **Show network addresses**, and **Stop capture in PCAPdroid**. You can always stop through PCAPdroid's own notification.
+4. The ASTER listener is loopback-only and limited to 3 minutes / 35k packets. IP, TCP/UDP port and extractable DNS/HTTP Host/TLS SNI are analyzed in-memory. No raw payloads are stored.
+5. If ASTER closes or the listener times out, PCAPdroid can still be capturing. **Stop capture in PCAPdroid explicitly.** The third-party VPN engine keeps forwarding traffic independently; ASTER never runs a fail-closed VPN.
+6. For optional TLS decryption you must follow PCAPdroid's own *separate* explicitly authorized settings; ASTER never installs a CA or silently decrypts other apps.
+7. Testing on both Android 10/15 emulators is a smoke test of ASTER, not proof that PCAPdroid integration works on every phone/ROM.
+
+## Test evidence and physical power study
+The [Android CI workflow](.github/workflows/android.yml) runs host unit tests, lint, instrumentation on API 29 and 35 emulators, and uploads memory/startup/CPU observations in artifacts before releasing a test APK.
+See [performance protocol](docs/PERFORMANCE_PROTOCOL.md) and [detection evaluation](docs/DETECTION_EVALUATION.md). An emulator **cannot** validate per-device ARMv7 energy usage or malware detection rates.
+No real-phone tests or real benign/malware corpus metrics have been completed.
+
 ## Release readiness
 
-The CI APK remains a temporary-key debug build. Before calling it a production release, add a permanent secure signing key (held by the maintainer, not committed), reproducible release builds, instrumented tests on Android 7–16 including Samsung/MIUI, validated malware/benign accuracy metrics and false-positive review, SBOM, privacy review, performance/battery baselines, a robust per-app VPN networking engine with lossless packet forwarding and explicit user choice, and a maintained signed vulnerability feed. This project cannot match established antivirus products on detection without curated intelligence and real malware-corpus evaluation.
+The CI APK remains an ephemeral-key test build (per maintainer request, NO production signing key is configured). Before production: physically test ARMv7 and ARM64 phones including Samsung/MIUI, validate real malware/benign accuracy and false-positive rates, produce physical battery/fps benchmarks, create a standardized verified SBOM, audit the network companion interaction and its lifecycle, and maintain vetted/signed vulnerability intelligence. Do not call any of these completed based solely on emulator success. This project cannot match established antivirus products on detection without curated intelligence and real malware-corpus evaluation.
 
 ## Review and tests
 
