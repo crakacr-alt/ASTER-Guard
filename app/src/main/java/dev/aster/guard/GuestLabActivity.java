@@ -197,16 +197,18 @@ public final class GuestLabActivity extends Activity {
         worker.execute(()->{
             try{
                 JSONObject result=action.run();
+                JSONObject refreshed=null;
+                if(updateStatus){
+                    try{refreshed=lab.get("/v1/status");}
+                    catch(Exception ignored){/* Keep the primary command result. */}
+                }
+                final JSONObject safeStatus=refreshed;
                 runOnUiThread(()->{
                     if(isDestroyed()||isFinishing())return;
                     busy=false;outputTitle=title;output=result.toString(2);
-                    if(updateStatus){
-                        try{
-                            status=lab.get("/v1/status");
-                            selected=status.optString("selected_package","");
-                        }catch(Exception ignored){
-                            // The action result remains visible even if follow-up status fails.
-                        }
+                    if(safeStatus!=null){
+                        status=safeStatus;
+                        selected=status.optString("selected_package","");
                     }
                     render();
                 });
