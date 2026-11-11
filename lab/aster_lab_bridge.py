@@ -154,6 +154,37 @@ class Lab:
             raise ValueError("Selected app is not running; start it first")
         return pid
 
+    def network(self, allow: bool) -> dict:
+        """Best-effort Android guest radio setting ONLY; not a host firewall.
+
+        This does not substitute for an isolated network namespace or external
+        egress firewall in malware experiments.
+        """
+        self.root_required()
+        if not isinstance(allow, bool):
+            raise ValueError("Expected JSON boolean allow")
+        state = "disable" if not allow else "enable"
+        responses = []
+        # Do not expose general command strings: fixed list, constant args.
+        commands = [
+            ("shell", "svc", "wifi", state),
+            ("shell", "svc", "data", state),
+            ("shell", "cmd", "connectivity", "airplane-mode",
+             "disable" if allow else "enable"),
+        ]
+        for argv in commands:
+            try:
+                responses.append(self.adb(*argv, timeout=8, limit=512))
+            except (RuntimeError, subprocess.TimeoutExpired) as exc:
+                responses.append("unsupported: " + str(exc)[:100])
+        self.net_state = "guest_radio_on_unverified" if allow else "guest_radio_off_unverified"
+        self.log("guest_radio", "on" if allow else "off")
+        return {"allow": allow, "network_isolation": self.net_state,
+                "guest_radio_results": responses,
+                "warning": "Only guest radio state changed. A rootable Android emulator "
+                           "can still have host-provided virtual network egress. "
+                           "For real malware, enforce host-side firewall/namespace isolation."}
+
     def start(self) -> dict:
         pkg = self.require_selected()
         self.root_required()
@@ -472,6 +503,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected JSON object")
             if path == "/v1/select":
                 return self._json(200, lab.select(obj.get("package", "")))
+            if path == "/v1/network":
+                if type(obj.get("allow")) is not bool:
+                    raise ValueError("Expected boolean allow")
+                return self._json(200, lab.network(obj["allow"]))
             if path == "/v1/start":
                 return self._json(200, lab.start())
             if path == "/v1/stop":
