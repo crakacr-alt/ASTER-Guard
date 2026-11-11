@@ -132,8 +132,17 @@ public final class GuestLabActivity extends Activity {
         body.addView(button("Обновить список гостевых приложений",this::refreshPackages));
         body.addView(button("Выбрать пакет для анализа",this::choosePackage));
         body.addView(button("Установить APK в гостевой Android",this::confirmImport));
-        body.addView(button("Запустить выбранное приложение",()->request(
-            "Запуск гостевого APK",()->lab.post("/v1/start",new JSONObject()),true)));
+        body.addView(button("Запустить выбранное приложение",()->{
+            new AlertDialog.Builder(this).setTitle("Запуск APK в гостевой Android")
+                .setMessage("Подтвердите, что это ваш лабораторный эмулятор, а не основной телефон. "+
+                    "Сеть гостя может выходить через NAT даже при выключенном Wi-Fi! "+
+                    "Не запускайте неизвестный вредоносный APK без проверенного "+
+                    "сетевого ограничения на лабораторном хосте.")
+                .setNegativeButton("Отмена",null)
+                .setPositiveButton("Запустить в госте",(d,w)->request(
+                    "Запуск гостевого APK",()->lab.post("/v1/start",new JSONObject()),true))
+                .show();
+        }));
         body.addView(button("Остановить выбранное приложение",()->{
             new AlertDialog.Builder(this).setTitle("Остановить процесс гостя?")
                 .setMessage("Только выбранный пакет в эмуляторе; несохранённые данные внутри гостя могут быть потеряны.")
