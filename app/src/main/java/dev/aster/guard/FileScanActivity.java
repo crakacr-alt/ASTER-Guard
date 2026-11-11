@@ -120,6 +120,7 @@ public final class FileScanActivity extends Activity {
         if(r.apk){
             add("APK ещё НЕ установлен. Для просмотра DEX-кода можно создать временную копию в закрытом кэше ASTER без установки.",13,MUTED);
             content.addView(action("Исследовать код APK (DEX / Smali)",this::stageApk));
+            content.addView(action("Лаборатория кода и трекеров (без установки)",()->stageApkForLab()));
         }
         content.addView(action("Копировать отчёт",()->{
             ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
@@ -220,7 +221,13 @@ public final class FileScanActivity extends Activity {
             });
         });
     }
+    private void stageApkForLab(){
+        stageApkInternal(true);
+    }
     private void stageApk(){
+        stageApkInternal(false);
+    }
+    private void stageApkInternal(boolean openLab){
         if(report==null||!report.apk||picked==null||running)return;
         if(size>MAX_TEMP_APK){
             message("APK больше 96 МиБ", "Для экономии памяти ASTER не копирует такой APK в кэш. Основная проверка уже завершена.");return;
@@ -249,7 +256,7 @@ public final class FileScanActivity extends Activity {
                     PackageInfo info=getPackageManager().getPackageArchiveInfo(tmp.getAbsolutePath(),0);
                     if(info!=null&&info.packageName!=null)packageName=info.packageName;
                 }catch(Exception ignored){}
-                Intent intent=new Intent(this,DexExplorerActivity.class);
+                Intent intent=new Intent(this,openLab?PrivacyLabActivity.class:DexExplorerActivity.class);
                 intent.putExtra("archivePath",tmp.getAbsolutePath());
                 intent.putExtra("packageName",packageName);
                 intent.putExtra("label",displayName+" · без установки");

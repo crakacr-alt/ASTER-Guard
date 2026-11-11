@@ -44,6 +44,37 @@ public final class ShizukuBridge {
         validate(c,pkg,op==14);
         return execute(c,op,pkg);
     }
+    private static final java.util.Set<String> ALLOWED_PRIVACY_OPS=
+        new java.util.HashSet<>(java.util.Arrays.asList(
+            "FINE_LOCATION","COARSE_LOCATION","READ_CONTACTS","READ_CALL_LOG",
+            "READ_SMS","CAMERA","RECORD_AUDIO"));
+    public static String setPrivacyOp(Context c,String pkg,String op,boolean deny)throws Exception{
+        if(!ALLOWED_PRIVACY_OPS.contains(op))throw new SecurityException("AppOps не разрешён: "+op);
+        validate(c,pkg,true);
+        if(!authorized())throw new SecurityException("Shizuku не разрешён");
+        return executeOp(c,pkg,op,deny);
+    }
+    private static String executeOp(Context context,String pkg,String op,boolean deny)throws Exception{
+        final CountDownLatch ready=new CountDownLatch(1);
+        final AtomicReference<IExecService> ref=new AtomicReference<>();
+        ServiceConnection conn=new ServiceConnection(){
+            @Override public void onServiceConnected(ComponentName name,IBinder binder){
+                ref.set(IExecService.Stub.asInterface(binder));ready.countDown();
+            }
+            @Override public void onServiceDisconnected(ComponentName name){ref.set(null);ready.countDown();}
+        };
+        Shizuku.UserServiceArgs args=new Shizuku.UserServiceArgs(
+            new ComponentName(context.getPackageName(),ShizukuDiagnosticService.class.getName()))
+            .daemon(false).version(3).processNameSuffix("inspector");
+        Shizuku.bindUserService(args,conn);
+        try{
+            if(!ready.await(9,TimeUnit.SECONDS)||ref.get()==null)
+                throw new IllegalStateException("Служба Shizuku недоступна");
+            return ref.get().setPrivacyOp(pkg,op,deny);
+        }finally{
+            try{Shizuku.unbindUserService(args,conn,true);}catch(Throwable ignored){}
+        }
+    }
     private static void validate(Context c,String pkg,boolean mutating)throws Exception{
         if(pkg==null||!pkg.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+"))
             throw new SecurityException("Неверное имя приложения");

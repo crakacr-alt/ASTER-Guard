@@ -40,6 +40,18 @@ public final class ShizukuDiagnosticService extends IExecService.Stub {
             default:throw new SecurityException("Операция запрещена");
         }
     }
+    private static final java.util.Set<String> ALLOWED_OPS=
+        new java.util.HashSet<>(java.util.Arrays.asList(
+            "FINE_LOCATION","COARSE_LOCATION","READ_CONTACTS","READ_CALL_LOG",
+            "READ_SMS","CAMERA","RECORD_AUDIO"));
+    @Override public String setPrivacyOp(String pkg,String op,boolean deny)throws RemoteException{
+        checkPackageName(pkg);
+        if(!ALLOWED_OPS.contains(op))throw new SecurityException("AppOps запрещён");
+        if("dev.aster.guard".equals(pkg)||!isThirdParty(pkg))
+            throw new SecurityException("Нельзя изменять ASTER или системные приложения");
+        // One narrowly scoped action. No arbitrary shell, batch changes or privilege grants.
+        return execute(new String[]{"cmd","appops","set",pkg,op,deny?"ignore":"default"});
+    }
     private static void checkPackageName(String value){
         if(value==null||value.length()>180||
             !value.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+"))

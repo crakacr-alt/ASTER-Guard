@@ -294,6 +294,8 @@ public final class MainActivity extends Activity {
         fileCard.addView(text("Проверка файла из памяти",18,TEXT,true),fill(8));
         fileCard.addView(text("APK без установки, EXE, PDF, Word, PowerPoint, PNG и любые другие файлы. Проверяем формат, SHA-256, скрипты и вложения локально.",13,MUTED,false),fill(12));
         fileCard.addView(button("Выбрать и проверить файл",true,v->openFileScanner()));
+        fileCard.addView(button("Лаборатория · Android-гость и трассировка",false,
+            v->startActivity(new Intent(this,GuestLabActivity.class))),fill(10));
         body.addView(fileCard,fill(18));
 
         LinearLayout metrics=row();
@@ -475,7 +477,8 @@ public final class MainActivity extends Activity {
             }
             box.addView(text("● предоставлено   ○ не предоставлено / не применимо",11,MUTED,false),fill(20));
         }
-        box.addView(button("Открыть код DEX / Smali · классы и методы",true,v->openDexExplorer(r)),fill(10));
+        box.addView(button("Лаборатория кода, трекеров и приватности",true,v->openPrivacyLab(r)),fill(10));
+        box.addView(button("Открыть код DEX / Smali · классы и методы",false,v->openDexExplorer(r)),fill(10));
         box.addView(button("Аудит APK, разрешений и библиотек",false,v->reverseEngineer(r)),fill(10));
         box.addView(button("Shizuku · инструменты приложения",false,v->openShizukuActions(r)),fill(10));
         box.addView(button("Глубокий анализ APK + SHA-256",false,v->deepAnalyze(r)),fill(10));
@@ -522,6 +525,12 @@ public final class MainActivity extends Activity {
     }
 
 
+    private void openPrivacyLab(AppRecord record){
+        Intent intent=new Intent(this,PrivacyLabActivity.class);
+        intent.putExtra("packageName",record.packageName);
+        intent.putExtra("label",record.label);
+        startActivity(intent);
+    }
     private void openDexExplorer(AppRecord record){
         Intent intent=new Intent(this,DexExplorerActivity.class);
         intent.putExtra("packageName",record.packageName);
