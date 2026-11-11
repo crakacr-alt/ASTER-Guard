@@ -26,7 +26,7 @@
 
 ## Get an APK
 
-**[Download the Android APK directly from GitHub Releases](https://github.com/crakacr-alt/ASTER-Guard/releases/tag/v0.4.0-test)** — in *Assets*, tap **`ASTER-Guard-v0.4.0-debug.apk`**. This is a test build; the APK is directly downloadable without extracting the GitHub Actions ZIP.
+**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.4.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.4.0/ASTER-Guard-v0.4.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 

@@ -1,0 +1,66 @@
+name: Publish visible Android APK release
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-visible-release.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish-tested-apk:
+    name: Publish verified debug APK as visible GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Recover previously tested APK from existing GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download v0.4.0-test --pattern 'ASTER-Guard-v0.4.0-debug.apk' --dir release-assets
+          test -s release-assets/ASTER-Guard-v0.4.0-debug.apk
+          sha256sum release-assets/ASTER-Guard-v0.4.0-debug.apk
+          file release-assets/ASTER-Guard-v0.4.0-debug.apk
+      - name: Publish normal visible release without changing APK or signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.0 >/dev/null 2>&1; then
+            gh release edit v0.4.0 --prerelease=false --latest
+          else
+            cat > notes.md <<'EOF'
+          # ASTER Guard v0.4.0 — Android APK
+
+          This is the regular, visible GitHub release page, containing **the same APK that passed Android CI and emulator smoke checks**.
+
+          ## Install
+          Expand **Assets** below and download `ASTER-Guard-v0.4.0-debug.apk`.
+          Minimum Android 7.0; pure Java/Dex, compatible in principle with ARMv7 32-bit and ARM64 64-bit.
+
+          ## Features
+          - Explainable local APK risk audit, signature/permissions, static DEX and library analysis
+          - On-demand OSV checks for precisely identified Maven dependencies
+          - Optional Shizuku diagnostics and battery/thermal/memory summaries
+          - PCAP import; opt-in PCAPdroid companion integration for live packet metadata
+          - GitHub update notifications and user-controlled safe game mode
+
+          ## Important — test APK
+          This APK is signed with **an ephemeral CI debug key**, not a maintained production signing key. It has NOT passed physical-device certification or malware-detection accuracy validation, so do not use it as the sole antivirus.
+          On updates with mismatching signatures, Android may require uninstalling the previous test APK. **No production signing key has been created or used.**
+
+          Build evidence: https://github.com/crakacr-alt/ASTER-Guard/actions/runs/42873380730
+          Repo: https://github.com/crakacr-alt/ASTER-Guard
+          EOF
+            gh release create v0.4.0 release-assets/ASTER-Guard-v0.4.0-debug.apk \
+              --target 51684fd2914130724c20b708f87f481c43a497eb \
+              --title 'ASTER Guard v0.4.0 — Android APK (тестовая подпись)' \
+              --notes-file notes.md --latest
+          fi
+          gh release view v0.4.0 --json url,isPrerelease,isDraft,assets,isLatest
