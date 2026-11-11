@@ -122,6 +122,12 @@ public final class GuestLabActivity extends Activity {
                  "реального вредоносного ПО не гарантируется. Переключатель сети намеренно не "+
                  "имитирует защиту.",12,AMBER);
         }
+        heading("Гостевая сеть (мягкие переключатели)");
+        body.addView(button("Отключить Wi-Fi и мобильные данные в госте",()->network(false)));
+        body.addView(button("Включить Wi-Fi и мобильные данные в госте",()->network(true)));
+        line("Это настройки гостевой Android, НЕ гарантированная изоляция вируса. "+
+             "Для запуска настоящего вредоносного APK нужна отдельная изоляция "+
+             "сетевого выхода на лабораторном ПК.",12,AMBER);
         heading("Гостевые APK и выбор процесса");
         body.addView(button("Обновить список гостевых приложений",this::refreshPackages));
         body.addView(button("Выбрать пакет для анализа",this::choosePackage));
@@ -258,6 +264,21 @@ public final class GuestLabActivity extends Activity {
                 }catch(Exception e){error("Выбор",e);}
             }).setNegativeButton("Отмена",null).show();
     }
+    private void network(boolean enabled){
+        new AlertDialog.Builder(this).setTitle(enabled?"Включить сеть гостя?":"Отключить сеть гостя?")
+            .setMessage("Это только Wi-Fi/мобильные данные гостевой Android. "+
+                "Доступ через виртуальный NAT или интерфейсы хоста может сохраниться. "+
+                "Для вредоносного ПО обязательно дополнительно блокируйте выход "+
+                "в сеть на хостовой лаборатории.")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton(enabled?"Включить":"Отключить",(d,w)->{
+                try{
+                    JSONObject payload=new JSONObject().put("allow",enabled);
+                    request("Состояние гостевой сети",()->lab.post("/v1/network",payload),true);
+                }catch(Exception e){error("Гостевая сеть",e);}
+            }).show();
+    }
+
     private void confirmImport(){
         new AlertDialog.Builder(this).setTitle("Загрузить APK в отдельную лабораторию?")
             .setMessage("Выбранный APK будет передан на указанный вами лабораторный компьютер "+
