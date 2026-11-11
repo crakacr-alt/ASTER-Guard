@@ -1,0 +1,32 @@
+# ASTER Guest Lab: rootable Android Emulator controlled from ASTER
+
+**All buttons and reports are inside ASTER Guard**. The full Android Emulator and root guest run on a separate authorized Linux workstation, not within the primary phone.
+
+## Setup
+
+Install the Android SDK emulator, adb, sdkmanager, avdmanager; Java 17+ (for the jdb Java debugger), Python 3.10+, openssl and KVM.
+
+Run bash lab/setup.sh to generate **TLS transport** certificate and pairing token locally. It does not generate an Android APK signing key. Never commit lab/private.
+
+Start a rootable AOSP guest using bash lab/start_guest.sh 35 x86_64 (Android 15), or bash lab/start_guest.sh 24 x86 (Android 7). SDK availability of x86/64 differs by API. Production Play images frequently refuse adb root. Guest data wipes on every new launch.
+
+With the emulator running, execute:
+
+    python3 lab/aster_lab_bridge.py --cert lab/private/cert.pem --key lab/private/key.pem --token-file lab/private/pairing_token
+
+By default HTTPS listens only on 127.0.0.1:8742. For your phone, connect a trusted private tunnel, or bind a firewalled LAN IP with --host 192.168.x.x --allow-lan. Never expose publicly.
+
+Open ASTER -> Overview -> Android Lab, then enter the bridge HTTPS URL, SHA-256 TLS certificate fingerprint and pairing token.
+
+## What it does
+
+- Select guest-installed package, install opt-in APK into guest, launch/stop.
+- Recent PID logcat, process status and memory map, native debuggerd backtrace.
+- JDWP Java debugger: breakpoints and steps only if selected guest process actually exposes JDWP; not guaranteed for arbitrary production APK.
+- Create selected-app HPROF heap dump when Android allows it, download through Android system picker. Heap may include sensitive data.
+- Guest Wi-Fi/mobile toggles are NOT host-enforced offline isolation; do not test real malware without separate verified firewall/network namespace.
+- Root exists only inside the guest emulator, never primary phone.
+- No arbitrary adb/host shell command endpoint. Full Android guest is NOT embedded inside APK.
+
+Unit tests: python3 -m unittest discover -s lab/tests -v
+Threat model: docs/LAB_THREAT_MODEL.md
