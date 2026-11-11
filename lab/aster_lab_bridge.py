@@ -78,6 +78,10 @@ class Lab:
         self.forward_port: int | None = None
         self.debug_target = ""
         self.net_state = "unverified"  # Never imply a reliable VM network kill switch.
+        self.trace_proc: subprocess.Popen | None = None
+        self.trace_lines: list[str] = []
+        self.trace_package = ""
+        self.trace_pid: int | None = None
         self.log("bridge_start", "Guest controller started. Host network isolation UNVERIFIED.")
 
     def adb(self, *args: str, timeout: int = 12, limit: int = 64000) -> str:
@@ -109,6 +113,7 @@ class Lab:
             "network_warning": "Soft Android toggles are NOT a verified host firewall. "
                                "Untrusted malware requires host-verified offline isolation.",
             "debugger_attached": self.jdb is not None and self.jdb.poll() is None,
+            "trace_running": self.trace_proc is not None and self.trace_proc.poll() is None,
             "features": ["logcat", "process snapshot", "native backtrace",
                          "JDWP (debuggable apps)", "bounded HPROF heap dump"],
         }
@@ -127,6 +132,9 @@ class Lab:
         name = clean_package(name)
         if name not in self.packages():
             raise ValueError("Choose a user-installed package inside the selected emulator")
+        if self.selected != name:
+            self.trace_stop()
+            self.detach_debugger()
         self.selected = name
         self.log("select_package", name)
         return {"selected_package": name, "pid": self.pid(name)}
@@ -198,6 +206,7 @@ class Lab:
         self.root_required()
         self.adb("shell", "am", "force-stop", pkg, timeout=8)
         self.detach_debugger()
+        self.trace_stop()
         self.log("stop_package", pkg)
         return {"stopped": pkg}
 
@@ -215,6 +224,67 @@ class Lab:
         self.log("logcat_snapshot", f"{self.selected} pid={pid}")
         return {"package": self.selected, "pid": pid, "logcat": raw[:LOG_LIMIT],
                 "scope": "Only available Android logcat entries, not every action."}
+
+    def trace_start(self) -> dict:
+        """Bounded in-memory live logcat for selected running guest PID.
+        This is not system-call tracing, network interception or global log scraping.
+        """
+        pkg = self.require_selected()
+        pid = self.require_pid()
+        self.root_required()
+        if self.trace_proc and self.trace_proc.poll() is None:
+            if pkg == self.trace_package and pid == self.trace_pid:
+                return {"running": True, "package": pkg, "pid": pid}
+            self.trace_stop()
+        self.trace_lines = []
+        self.trace_package = pkg
+        self.trace_pid = pid
+        self.trace_proc = subprocess.Popen(
+            ["adb", "-s", self.serial, "logcat", "-v", "threadtime",
+             "--pid", str(pid)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        def collect():
+            proc = self.trace_proc
+            if proc is None or proc.stdout is None:
+                return
+            while proc.poll() is None:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                with LOCK:
+                    self.trace_lines.append(line.rstrip()[:2000])
+                    del self.trace_lines[:-750]
+        threading.Thread(target=collect,daemon=True,name="aster-logcat").start()
+        self.log("trace_started",pkg+" pid="+str(pid))
+        return {"running": True, "package": pkg, "pid": pid,
+                "note": "Logcat only: not every app action is logged."}
+
+    def trace_view(self) -> dict:
+        return {"running": self.trace_proc is not None and self.trace_proc.poll() is None,
+                "package": self.trace_package,
+                "pid": self.trace_pid,
+                "lines": self.trace_lines[-180:],
+                "scope": "Recent PID logcat from guest Android. Not a syscall/file/network audit."}
+
+    def trace_stop(self) -> dict:
+        proc=self.trace_proc
+        self.trace_proc=None
+        if proc is not None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except (OSError,subprocess.TimeoutExpired):
+                try:proc.kill()
+                except OSError:pass
+        previous=self.trace_package
+        self.trace_package=""
+        self.trace_pid=None
+        if previous:
+            self.log("trace_stopped",previous)
+        return {"running": False, "lines_saved_in_memory": len(self.trace_lines)}
 
     def snapshot(self) -> dict:
         pid = self.require_pid()
@@ -456,6 +526,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"packages": lab.packages()})
             if path == "/v1/logs":
                 return self._json(200, lab.logs())
+            if path == "/v1/trace":
+                return self._json(200, lab.trace_view())
             if path == "/v1/process":
                 return self._json(200, lab.snapshot())
             if path == "/v1/debug":
@@ -511,6 +583,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, lab.start())
             if path == "/v1/stop":
                 return self._json(200, lab.stop())
+            if path == "/v1/trace/start":
+                return self._json(200, lab.trace_start())
+            if path == "/v1/trace/stop":
+                return self._json(200, lab.trace_stop())
             if path == "/v1/debug/attach":
                 return self._json(200, lab.debug_attach())
             if path == "/v1/debug/command":
@@ -569,6 +645,7 @@ def main():
     finally:
         with LOCK:
             lab.detach_debugger()
+            lab.trace_stop()
         server.server_close()
 
 
