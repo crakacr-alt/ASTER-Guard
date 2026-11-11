@@ -139,7 +139,10 @@ class Lab:
     def pid(self, pkg: str) -> int | None:
         if not pkg:
             return None
-        raw = self.adb("shell", "pidof", pkg, timeout=7)
+        try:
+            raw = self.adb("shell", "pidof", pkg, timeout=7)
+        except RuntimeError:
+            return None
         # pidof can return multiple PIDs. Select base process only when running.
         match = re.search(r"\b\d{1,7}\b", raw)
         return int(match.group(0)) if match else None
@@ -349,8 +352,8 @@ class Lab:
 
     def upload_apk(self, blob: bytes) -> dict:
         self.root_required()
-        if not blob or len(blob) > MAX_UPLOAD:
-            raise ValueError("APK must be 1–96 MiB")
+        if len(blob) < 4 or len(blob) > MAX_UPLOAD:
+            raise ValueError("APK must be 4 bytes–96 MiB")
         # ZIP signature check prevents obvious accidental uploads. No execution on host.
         if blob[:4] != b"PK\x03\x04":
             raise ValueError("File does not look like an APK ZIP")
@@ -520,7 +523,7 @@ def main():
     ssl_context.load_cert_chain(args.cert, args.key)
     server.socket = ssl_context.wrap_socket(server.socket, server_side=True)
     fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(
-        args.cert.read_text()).__bytes__()).hexdigest().upper()
+        args.cert.read_text())).hexdigest().upper()
     print("ASTER Lab: HTTPS secure controller; NOT a VM inside the phone", flush=True)
     print(f"URL https://{args.host}:{args.port}", flush=True)
     print(f"Certificate SHA-256 {fingerprint}", flush=True)
