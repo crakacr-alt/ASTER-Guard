@@ -211,7 +211,7 @@ public final class GuestLabActivity extends Activity {
                 final JSONObject safeStatus=refreshed;
                 runOnUiThread(()->{
                     if(isDestroyed()||isFinishing())return;
-                    busy=false;outputTitle=title;output=result.toString(2);
+                    busy=false;outputTitle=title;output=result.toString();
                     if(safeStatus!=null){
                         status=safeStatus;
                         selected=status.optString("selected_package","");
@@ -368,7 +368,7 @@ public final class GuestLabActivity extends Activity {
                     runOnUiThread(()->{
                         if(isDestroyed()||isFinishing())return;
                         busy=false;outputTitle="Установка в гостевую Android";
-                        output=res.toString(2)+"\nОбновите список гостевых пакетов.";
+                        output=res.toString()+"\nОбновите список гостевых пакетов.";
                         render();
                     });
                 }catch(Exception ex){
