@@ -163,7 +163,7 @@ public final class GuestLabActivity extends Activity {
         LinearLayout commands=new LinearLayout(this);commands.setOrientation(LinearLayout.VERTICAL);
         body.addView(commands);
         String[] names={"Потоки","Стек вызовов","Классы","Пауза","Продолжить","Шаг в метод","Шаг через"};
-        String[] ids={"threads","where","classes","suspend","resume","cont","step"};
+        String[] ids={"threads","where","classes","suspend","resume","step","next"};
         for(int i=0;i<names.length;i++){
             final String cmd=ids[i];
             commands.addView(button("JDWP · "+names[i],()->debugCommand(cmd,"")));
