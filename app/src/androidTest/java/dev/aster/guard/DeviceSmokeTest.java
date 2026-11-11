@@ -34,6 +34,32 @@ public final class DeviceSmokeTest {
         assertTrue(result.uptimeMs>=0);
         assertNotNull(NetworkReader.connection(target()));
     }
+    @Test public void dexBrowserReadsInstalledApk() throws Exception {
+        android.content.pm.ApplicationInfo info=target().getPackageManager()
+            .getApplicationInfo(target().getPackageName(),0);
+        DexCodeReader reader=DexCodeReader.create();
+        DexCodeReader.Index index=reader.index(new String[]{info.sourceDir},target().getPackageName());
+        assertTrue("Installed ASTER must contain DEX classes",index.dexFiles>0);
+        assertFalse(index.classes.isEmpty());
+        boolean found=false;
+        for(DexCodeReader.Item item:index.classes){
+            if(item.type.equals("Ldev/aster/guard/MainActivity;")){
+                found=true;
+                java.util.List<org.jf.dexlib2.iface.Method> methods=reader.methods(item);
+                assertFalse(methods.isEmpty());
+                for(org.jf.dexlib2.iface.Method m:methods){
+                    if(m.getImplementation()!=null){
+                        String opcodes=reader.disassemble(item,m);
+                        assertTrue(opcodes.contains(".method"));
+                        assertTrue(opcodes.contains(".registers"));
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        assertTrue("APK browser should locate ASTER MainActivity",found);
+    }
     @Test public void liveCaptureIntentIsExplicitOnly(){
         Intent request=LiveCaptureSession.controlIntent("start","com.example.safeapp");
         assertEquals("start",request.getStringExtra("action"));

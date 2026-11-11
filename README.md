@@ -1,6 +1,6 @@
 # ASTER Guard
 
-**ASTER Guard 0.4.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
+**ASTER Guard 0.5.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
 
 > **This is an experimental security *auditor*, not a validated malware scanner.** It cannot guarantee detection, replace Play Protect, isolate threats, or inspect encrypted HTTPS payloads.
 
@@ -15,8 +15,10 @@
 - Per-UID receive/transmit counters for the last 24h when Android Usage Access is granted (Wi-Fi and mobile; batched system queries).
 - Dark UI, risk filters, app details, shareable text report.
 - No resident background scan services or scheduled network checks. Internet access only for GitHub release check **on app launch** and opt-in OSV Maven version checks.
-- Optional Shizuku integration, with explicit user permission and allowlisted read-only commands to inspect process/memory snapshots; ADB privileges are not root.
-- On-demand DEX class/method identifiers, embedded SDK families (versions may be unknown), split APK and native-library inventory, and code-string URL hosts; **not** source reconstruction or live debugging.
+- Optional Shizuku 13 API UserService integration: explicit permission, allowlisted diagnostics and confirmed third-party force-stop. No root, no arbitrary shell commands, no invisible privilege escalation.
+- **Actual read-only DEX/Smali instruction explorer:** installed app → class browser (search, own classes vs libraries) → method → register/opcode/reference disassembly with copy/share, including split APK / multidex. Loads on demand; 64 MiB/Dex cap. This is **actual bytecode**, not reconstructed Java source or live execution.
+- On-demand APK static inventory: embedded SDK families (version often unknown), split APK, native libraries and code-string hosts.
+- **Shizuku toolkit inside each app's detail panel:** user-approved ADB/shell package inspection, AppOps view, process memory, APK path and explicit-confirmation force-stop for third-party apps; system apps and ASTER force-stop blocked.
 - Limited exact-version Maven dependency OSV.dev lookup on user action only. No CVE guesses from unnamed/versionless SDKs.
 - **Live, consent-driven packet metadata mode** via the officially documented PCAPdroid companion API. PCAPdroid must be separately installed and authorized by the user: it operates the actual packet-forwarding local VPN. ASTER binds a loopback-only UDP listener, requests a short, limited PCAP stream, and extracts destinations/DNS/SNI of a selected package in memory. ASTER has **no built-in VPN**, does not upload payloads or decrypt HTTPS, and never establishes a broken TUN interface.
 - Offline PCAP import: destination IP/ports, cleartext DNS/HTTP Host and TLS SNI where present. Not a TLS decryptor.
@@ -24,9 +26,15 @@
 - Game profile with explicit Do Not Disturb permission and reversible toggling; own-app cache cleanup; never force-kills apps or falsely claims to free Android memory.
 - Android 7.0+ (API 24+). Java bytecode/dex only: works with ARMv7 32-bit and ARM64 64-bit, and other Android ABIs.
 
+## Reverse engineering: use it
+After scanning installed packages, choose an app → **Open DEX/Smali code**. Search classes, tap a class, search/select a method, and view real executable DEX opcodes and referenced methods/strings; copy or share as text. The first screen prioritizes the app's package instead of AndroidX dependency methods. Use **Show all libraries** to explore dependencies. This is intentionally read-only and never injects into protected processes.
+
+## Shizuku: use it
+Install [Shizuku](https://shizuku.rikka.app/guide/setup/), start its ADB wireless debugging service and grant ASTER permission. In ASTER select **System** to confirm connected status, or open an app's detail → **Shizuku tools**. Available operations are limited to known command templates: package details, AppOps state, package APK paths, memory snapshot and confirmed force-stop of non-system/non-ASTER apps. Shizuku cannot silently grant all permissions, provide root, decrypt pinned HTTPS or attach a debugger to any non-debuggable process.
+
 ## Get an APK
 
-**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.4.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.4.0/ASTER-Guard-v0.4.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
+**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.5.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.5.0/ASTER-Guard-v0.5.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 

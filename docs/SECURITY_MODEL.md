@@ -57,3 +57,12 @@ Clean builds, unit tests, Android lint, on-device Android 6/8/10/12/14/15/16 tes
 - The local listener terminates after three minutes or 35k frames; PCAPdroid may continue capturing, and must be stopped by its notification or ASTER's Stop action.
 - PCAPdroid integration is optional and is NOT part of the APK's dependency graph. The third-party app's distribution, privacy policy and maintenance are independent.
 - Android emulator tests cannot validate physical ARM32/ARM64 compatibility, safe coexistence with other VPNs, or real power consumption.
+
+
+## Version 0.5.0 DEX and Shizuku additions
+
+- DEX code inspector uses the BSD-licensed `org.smali:dexlib2:2.5.2`; source API instructions are read-only. No execution of inspected code, no remote upload, no Java source reconstruction. Output is limited to 900 instructions/105 kB per method, dex payload limited to 64 MiB.
+- Searchable class/method navigation loads on demand and shows app-owned classes before dependencies; users can open other libraries.
+- Shizuku UserService uses an explicit permission prompt; `IExecService` only executes fixed command templates with safely validated package identifiers, bounded time and output. Force-stop requires extra user confirmation and is prohibited for system or ASTER packages on both client and service.
+- No arbitrary shell execution, no grant/revoke of dangerous permissions without OS consent, no root assumptions.
+- Latest GitHub release is normal (not prerelease) for discoverability but still uses ephemeral debug-key signing. This does NOT mean production readiness.
