@@ -60,6 +60,15 @@ public final class DeviceSmokeTest {
         }
         assertTrue("APK browser should locate ASTER MainActivity",found);
     }
+    @Test public void fileInspectorSafStyleStreamWorks() throws Exception {
+        byte[] pdf="%PDF-1.4\\n/JavaScript /OpenAction".getBytes("US-ASCII");
+        FileInspector.Report result=FileInspector.analyze(
+            new java.io.ByteArrayInputStream(pdf),null,"sample.pdf","application/pdf",
+            pdf.length,()->false,n->{});
+        assertEquals("PDF",result.format);
+        assertEquals(64,result.sha256.length());
+        assertFalse(result.findings.isEmpty());
+    }
     @Test public void liveCaptureIntentIsExplicitOnly(){
         Intent request=LiveCaptureSession.controlIntent("start","com.example.safeapp");
         assertEquals("start",request.getStringExtra("action"));
