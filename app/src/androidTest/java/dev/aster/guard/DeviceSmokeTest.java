@@ -69,6 +69,22 @@ public final class DeviceSmokeTest {
         assertEquals(64,result.sha256.length());
         assertFalse(result.findings.isEmpty());
     }
+    @Test public void privacyCodeAnalyzerReadsOwnApk() throws Exception {
+        android.content.pm.ApplicationInfo info=target().getPackageManager()
+            .getApplicationInfo(target().getPackageName(),0);
+        PrivacyCodeAnalyzer.Report r=PrivacyCodeAnalyzer.inspect(new String[]{info.sourceDir});
+        assertTrue("Own APK must contain DEX code",r.dexFiles>0);
+        assertTrue("Own APK must have classes",r.classes>0);
+    }
+    @Test public void labControllerUiOpensWithoutGuestConnection(){
+        Intent intent=new Intent(target(),GuestLabActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity=InstrumentationRegistry.getInstrumentation().startActivitySync(intent);
+        assertNotNull(activity);
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+        assertFalse(activity.isFinishing());
+        activity.runOnUiThread(activity::finish);
+    }
     @Test public void liveCaptureIntentIsExplicitOnly(){
         Intent request=LiveCaptureSession.controlIntent("start","com.example.safeapp");
         assertEquals("start",request.getStringExtra("action"));

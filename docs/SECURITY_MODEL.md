@@ -76,3 +76,14 @@ Clean builds, unit tests, Android lint, on-device Android 6/8/10/12/14/15/16 tes
 - APK bytecode browser is optional and caches only 96 MiB or smaller APKs into app-private cache with path validation; never installs or executes code.
 - No RAR/7z unpacking, dynamic Windows PE execution, Office VBA macro execution, hidden TLS MITM, or antivirus signature database. Reports are diagnostic heuristics with clear caveats.
 - SHA-256 is a fingerprint, not a declaration of legitimacy or malware; a file without flags must not be described as safe.
+
+
+## 0.7.0 code privacy lab and rooted guest controller
+
+- Privacy DEX scanner locates callsite references to ad/analytics SDKs, identifiers and sensitive APIs, explicitly not proof of their execution. Bounded methods/instructions and read-only.
+- User-approved Shizuku AppOps restriction for a small allowlist of sensitive operations, with package validation and system-app protection. No arbitrary shell or silent privilege grants.
+- External rooted Android Emulator x86/x86_64 controller can be paired by certificate-pinned HTTPS plus random bearer token, integrated in ASTER UI. Root is ONLY within external guest emulator, not on primary Android device.
+- External bridge supports selected guest package, explicit APK upload, PID logcat, proc status/maps, debuggerd native snapshot, Java JDWP controls for debuggable guest app, bounded HPROF heap dumps with opt-in Android file export.
+- No hard host-level network firewall is implemented: guest radio soft toggle is explicitly not reliable quarantine. Never test unknown malware until host egress isolation is verified separately.
+- This release does not provide an Android VM booting inside phone, full syscall trace, generic ADB console, native LLDB or APK repack/sign implementation.
+- CI only tests bridge command validation and emulator UI smoke, not actual host bridge dynamic debug/heap/network isolation end-to-end.

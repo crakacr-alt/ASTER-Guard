@@ -31,6 +31,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Verify Python guest-lab bridge guardrails
+        run: python3 -m unittest discover -s lab/tests -v
       - name: Verify and compile
         run: gradle --no-daemon --stacktrace clean testDebugUnitTest lintDebug assembleDebug
       - name: Print lint diagnostics on failure
@@ -120,32 +122,32 @@ jobs:
         with:
           name: ASTER-Guard-debug-apk
           path: release-files
-      - name: Publish v0.6.0 standard GitHub release (debug-key APK)
+      - name: Publish v0.7.0 standard GitHub release (debug-key APK)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.6.0"
-          APK="release-files/ASTER-Guard-v0.6.0-debug.apk"
+          TAG="v0.7.0"
+          APK="release-files/ASTER-Guard-v0.7.0-debug.apk"
           mv release-files/app-debug.apk "$APK"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already published; not replacing an existing versioned APK."
             exit 0
           fi
           cat > release-notes.md <<'EOF'
-          # ASTER Guard 0.6.0 · Test build
+          # ASTER Guard 0.7.0 · Test build
 
           **Direct Android APK** is attached below. Minimum Android 7.0 (API 24); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
 
-          **New offline file scanner:** use Android system picker to select any uninstalled APK, EXE/PE, PDF, Word/Excel/PowerPoint, PNG/JPEG, ZIP and other files. No storage permission or cloud upload. Signature detection, on-demand SHA-256, bounded ZIP/Office macro/included code audit, PDF JavaScript/actions and optional DEX/Smali viewer for selected uninstalled APKs. Shizuku, PCAPdroid, device-health features remain.
+          **New in-app privacy and emulator lab controls:** DEX callsite references to ad/analytics SDKs, device IDs and sensitive APIs, opt-in Shizuku AppOps restrictions, and a separate Android guest controller UI with HTTPS certificate pinning, authenticated bridge, APK upload to guest, PID logcat/proc snapshots, JDWP Java debugger for debuggable guest apps, and HPROF memory dump export. **Actual rooted x86/x86_64 Android Emulator runs on a separate authorized lab machine, NOT inside the phone**. Includes prior file scanner, DEX/Smali, Shizuku and PCAP tools.
 
-          **This is a normal GitHub Release page, but NOT a production-signed build.** Ephemeral CI debug key: upgrades may require uninstall/reinstall. File analysis only reports limited structural indicators: no real-time file protection, no fully validated malware-signature database, no exhaustive VBA/OLE/PE parser or full archive extraction for RAR/7z. No source-code reconstruction or unprivileged live process debugging. Physical phone tests and validated detection metrics are still missing.
+          **This is a normal GitHub Release page, but NOT a production-signed build.** Ephemeral CI debug key: upgrades may require reinstall. External guest is not on-device. Guest root does not guarantee debugger support for all nondebuggable apps; HPROF may fail. Guest radio toggles are not reliable malware network quarantine. No APK patcher, native LLDB, exhaustive syscall tracing, production signing key, physical-device tests or independently validated malware detection.
 
           This APK remains a **CI debug build** with an ephemeral key. The maintainer requested NO production signing-key setup. Reinstallation may be needed between builds. GitHub Actions runs host tests, Android lint and Android 10/15 emulator smoke checks before publishing.
 
           Source: https://github.com/crakacr-alt/ASTER-Guard
           EOF
-          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.6.0 · Android APK (debug signing)" --notes-file release-notes.md --latest
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.7.0 · Android APK (debug signing)" --notes-file release-notes.md --latest
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG"

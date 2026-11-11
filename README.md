@@ -1,11 +1,14 @@
 # ASTER Guard
 
-**ASTER Guard 0.6.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
+**ASTER Guard 0.7.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
 
 > **This is an experimental security *auditor*, not a validated malware scanner.** It cannot guarantee detection, replace Play Protect, isolate threats, or inspect encrypted HTTPS payloads.
 
 ## Features
 
+- **In-app code privacy lab:** inspect DEX call sites referencing ad and tracking SDKs, advertising ID, device ID, location, microphone, contacts, SMS, shell and network APIs. Calls are static references, **not live execution proof**. Opt-in Shizuku AppOps overrides for a limited selection of sensitive permissions on user apps.
+- **In-app guest Android lab controller:** all controls run inside ASTER UI. Pair with a **separately running** rooted AOSP Android Emulator on your own lab host using pinned TLS cert SHA-256 + token; choose guest app, upload APK with explicit consent, start/stop, guest radio soft controls, PID logcat, proc/maps/native backtrace, Java JDWP attach/step/breakpoints (only debuggable VM processes), and optional HPROF heap dump saved through Android file picker. Host bridge/API in lab/ directory. **The guest OS is not inside the APK and root never touches the main phone.**
+- **Important lab safety:** radio off does NOT guarantee host egress isolation, and logs do not capture every syscall. Use verified host firewall/network namespace and disposable host before opening live malware. APK repatching/re-signing, full Java decompilation and native LLDB are not implemented.
 - **Scan any file without installing/opening it:** Android Storage Access Framework document picker; APK, EXE/DLL/PE, PDF, DOC/DOCX/DOCM, XLS/XLSX/XLSM, PPT/PPTX/PPTM, PPS/PPSX, PNG/JPEG/GIF/WEBP, ZIP/JAR, RAR/7z/GZIP, ELF, scripts and unknown files. No broad filesystem permission.
 - **File type from magic bytes**, SHA-256 of files up to 512 MiB, PDF JavaScript/OpenAction/Launch/embedded file flags, OOXML VBA/macros/ActiveX/embedded EXE/remote relationships, ZIP path-traversal names, executable disguised as image/document. ZIP inflation is capped at 64 MiB and 1,200 entries; RAR/7z are fingerprinted but not unpacked.
 - **Non-installed APK static code browser:** select a file in the picker; if an APK, tap "Inspect DEX/Smali", which copies up to 96 MiB into ASTER's private cache and opens the real class/method/bytecode explorer without installing the app. This is a manual action and the temporary cache is subject to OS cleanup.
@@ -43,9 +46,17 @@ For an **uninstalled APK**, choose the additional **Inspect DEX/Smali** action. 
 
 An **EXE** is recognized as a Windows executable but not emulated or sandboxed. **PNG/JPEG** receive magic signature and hash checks, not a full image-decoder vulnerability audit. **PDF** checks uncompressed markers only; encrypted or compressed streams can hide JavaScript. **Old DOC/XLS/PPT** receive an OLE-container warning rather than a claim that all VBA code has been parsed. File-type mismatch/Office macros are risk indicators, **not proof of malware**. A file without flags is **not declared clean**.
 
+## Start ASTER Lab
+
+1. In the app open Overview → Android Lab for guest controls, or select an installed app → Privacy code lab, or open the same lab from a selected APK.
+2. To use dynamic debugging, follow [lab/README.md](lab/README.md) to create a separate rooted x86/x86_64 Android Emulator and local HTTPS pairing credentials. Connect manually with certificate SHA-256 and token. Android permissions do not offer a universal full guest virtual machine inside the primary device.
+3. Select a package installed in the guest, or explicitly upload one from the phone; run it, inspect process logcat, memory map and native stack, attach JDWP if the process is debuggable, or create an HPROF heap dump if Android supports it.
+4. Guest radio settings are soft; do not run unknown live malware without externally verified host egress isolation.
+5. Host security constraints are documented in [lab threat model](docs/LAB_THREAT_MODEL.md). The controller has **no arbitrary host/ADB shell endpoint** and does not execute an APK on the primary phone.
+
 ## Get an APK
 
-**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.6.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.6.0/ASTER-Guard-v0.6.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
+**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.7.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.7.0/ASTER-Guard-v0.7.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 
