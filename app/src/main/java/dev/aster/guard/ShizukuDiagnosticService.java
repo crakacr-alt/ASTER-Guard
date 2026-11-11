@@ -71,7 +71,8 @@ public final class ShizukuDiagnosticService extends IExecService.Stub {
                     result.write(buffer,0,n);
                 }
             }
-            if(p.isAlive())p.destroyForcibly();
+            // Process.destroy() is supported from API 1; minSdk is 24.
+            p.destroy();
             String output=result.toString("UTF-8");
             if(output.isEmpty()){
                 try{
