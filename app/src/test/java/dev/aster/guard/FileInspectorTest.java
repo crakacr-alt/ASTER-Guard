@@ -28,7 +28,7 @@ public final class FileInspectorTest {
         }
         return output.toByteArray();
     }
-    @Test public void pdfJavascriptAndOpenAction(){
+    @Test public void pdfJavascriptAndOpenAction() throws Exception {
         byte[] pdf="%PDF-1.7\n1 0 obj <</JavaScript 2 0 R /OpenAction 3 0 R>>".getBytes(StandardCharsets.ISO_8859_1);
         FileInspector.Report r=run(pdf,"receipt.pdf");
         assertEquals("PDF",r.format);
@@ -37,7 +37,7 @@ public final class FileInspectorTest {
         assertEquals(64,r.sha256.length());
         assertTrue(r.complete);
     }
-    @Test public void benignMinimalPngIsNotFlaggedAsExecutable(){
+    @Test public void benignMinimalPngIsNotFlaggedAsExecutable() throws Exception {
         byte[] png={(byte)0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0,0};
         FileInspector.Report r=run(png,"image.png");
         assertEquals("PNG",r.format);
@@ -45,21 +45,21 @@ public final class FileInspectorTest {
         assertFalse(has(r,"Расширение"));
         assertFalse(has(r,"Исполняемый"));
     }
-    @Test public void renamedExecutableIsFlagged(){
+    @Test public void renamedExecutableIsFlagged() throws Exception {
         byte[] pe={0x4d,0x5a,0,0,0,0,0,0};
         FileInspector.Report r=run(pe,"portrait.png");
         assertTrue(r.executable);
         assertTrue(has(r,"Расширение"));
         assertTrue(has(r,"Исполняемый"));
     }
-    @Test public void officeMacroFileDetected(){
+    @Test public void officeMacroFileDetected() throws Exception {
         FileInspector.Report r=run(zip("word/vbaProject.bin",new byte[]{1,2,3}),"proposal.docm");
         assertEquals(1,r.macroFiles);
         assertTrue(has(r,"VBA"));
         assertTrue(r.archive);
         assertFalse(r.zipPartial);
     }
-    @Test public void apkInventoryAndDexPresent(){
+    @Test public void apkInventoryAndDexPresent() throws Exception {
         ByteArrayOutputStream out=new ByteArrayOutputStream();
         try(ZipOutputStream zip=new ZipOutputStream(out)){
             zip.putNextEntry(new ZipEntry("AndroidManifest.xml"));zip.write(new byte[]{1,2});zip.closeEntry();
@@ -71,11 +71,11 @@ public final class FileInspectorTest {
         assertEquals(1,r.nativeLibraries);
         assertEquals(3,r.entries);
     }
-    @Test public void archiveTraversalDetectedWithoutExtracting(){
+    @Test public void archiveTraversalDetectedWithoutExtracting() throws Exception {
         FileInspector.Report r=run(zip("../escape.txt",new byte[]{42}),"unsafe.zip");
         assertTrue(has(r,"путь вне архива"));
     }
-    @Test public void fileDataRemainsPrivateAndNoExecution(){
+    @Test public void fileDataRemainsPrivateAndNoExecution() throws Exception {
         FileInspector.Report r=run("hello world".getBytes(StandardCharsets.UTF_8),"note.txt");
         assertTrue(r.complete);
         assertEquals(64,r.sha256.length());
