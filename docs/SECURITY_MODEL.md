@@ -66,3 +66,13 @@ Clean builds, unit tests, Android lint, on-device Android 6/8/10/12/14/15/16 tes
 - Shizuku UserService uses an explicit permission prompt; `IExecService` only executes fixed command templates with safely validated package identifiers, bounded time and output. Force-stop requires extra user confirmation and is prohibited for system or ASTER packages on both client and service.
 - No arbitrary shell execution, no grant/revoke of dangerous permissions without OS consent, no root assumptions.
 - Latest GitHub release is normal (not prerelease) for discoverability but still uses ephemeral debug-key signing. This does NOT mean production readiness.
+
+
+## Version 0.6.0 uninstalled-file scanner
+
+- User explicitly chooses a `content://` URI with Android `ACTION_OPEN_DOCUMENT`. No `MANAGE_EXTERNAL_STORAGE`, no indiscriminate MediaStore enumeration, no backup or sharing of file bytes.
+- `FileInspector` computes SHA-256 using a stream, limiting reads to 512 MiB, PDF/script string analysis to first 8 MiB. Files exceeding the cap are marked **partially inspected** with no complete hash.
+- ZIP/OOXML scan processes a bounded number of entries and 64 MiB total inflated bytes; paths are never extracted and ZIP traversal names are noted but cannot escape to storage.
+- APK bytecode browser is optional and caches only 96 MiB or smaller APKs into app-private cache with path validation; never installs or executes code.
+- No RAR/7z unpacking, dynamic Windows PE execution, Office VBA macro execution, hidden TLS MITM, or antivirus signature database. Reports are diagnostic heuristics with clear caveats.
+- SHA-256 is a fingerprint, not a declaration of legitimacy or malware; a file without flags must not be described as safe.

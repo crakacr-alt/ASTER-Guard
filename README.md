@@ -1,11 +1,14 @@
 # ASTER Guard
 
-**ASTER Guard 0.5.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
+**ASTER Guard 0.6.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
 
 > **This is an experimental security *auditor*, not a validated malware scanner.** It cannot guarantee detection, replace Play Protect, isolate threats, or inspect encrypted HTTPS payloads.
 
 ## Features
 
+- **Scan any file without installing/opening it:** Android Storage Access Framework document picker; APK, EXE/DLL/PE, PDF, DOC/DOCX/DOCM, XLS/XLSX/XLSM, PPT/PPTX/PPTM, PPS/PPSX, PNG/JPEG/GIF/WEBP, ZIP/JAR, RAR/7z/GZIP, ELF, scripts and unknown files. No broad filesystem permission.
+- **File type from magic bytes**, SHA-256 of files up to 512 MiB, PDF JavaScript/OpenAction/Launch/embedded file flags, OOXML VBA/macros/ActiveX/embedded EXE/remote relationships, ZIP path-traversal names, executable disguised as image/document. ZIP inflation is capped at 64 MiB and 1,200 entries; RAR/7z are fingerprinted but not unpacked.
+- **Non-installed APK static code browser:** select a file in the picker; if an APK, tap "Inspect DEX/Smali", which copies up to 96 MiB into ASTER's private cache and opens the real class/method/bytecode explorer without installing the app. This is a manual action and the temporary cache is subject to OS cleanup.
 - User-initiated scanning of installed packages, with `QUERY_ALL_PACKAGES` visibility.
 - Interpretable heuristics: declared overlay / accessibility / device-admin capabilities, SMS combinations, APK installation capability, old target SDK, debug builds, exported components.
 - Signing certificate SHA-256 and local baseline comparison for subsequent scans.
@@ -32,9 +35,17 @@ After scanning installed packages, choose an app → **Open DEX/Smali code**. Se
 ## Shizuku: use it
 Install [Shizuku](https://shizuku.rikka.app/guide/setup/), start its ADB wireless debugging service and grant ASTER permission. In ASTER select **System** to confirm connected status, or open an app's detail → **Shizuku tools**. Available operations are limited to known command templates: package details, AppOps state, package APK paths, memory snapshot and confirmed force-stop of non-system/non-ASTER apps. Shizuku cannot silently grant all permissions, provide root, decrypt pinned HTTPS or attach a debugger to any non-debuggable process.
 
+## How to scan a downloaded or external file
+
+Open **Overview → Choose and scan file** (also available in the **APK** tab). Select any readable file from Android's system picker, including Downloads and supported document providers. ASTER streams bytes and performs an offline structural scan; it does not install, execute, or upload the file. It displays a format signature, complete SHA-256 when under the 512 MiB cap, and explicit risk indicators. You can copy/share the report.
+
+For an **uninstalled APK**, choose the additional **Inspect DEX/Smali** action. ASTER copies up to 96 MiB of this APK to its private cache and opens the on-device DEX code viewer. APKs larger than this still receive the general file scan; full DEX browsing is not offered through the temporary-copy path. The APK is never installed.
+
+An **EXE** is recognized as a Windows executable but not emulated or sandboxed. **PNG/JPEG** receive magic signature and hash checks, not a full image-decoder vulnerability audit. **PDF** checks uncompressed markers only; encrypted or compressed streams can hide JavaScript. **Old DOC/XLS/PPT** receive an OLE-container warning rather than a claim that all VBA code has been parsed. File-type mismatch/Office macros are risk indicators, **not proof of malware**. A file without flags is **not declared clean**.
+
 ## Get an APK
 
-**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.5.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.5.0/ASTER-Guard-v0.5.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
+**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.6.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.6.0/ASTER-Guard-v0.6.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 
