@@ -84,6 +84,21 @@ class Lab:
         self.trace_pid: int | None = None
         self.log("bridge_start", "Guest controller started. Host network isolation UNVERIFIED.")
 
+    def cleanup_artifacts(self, force: bool = False) -> None:
+        """Erase expired sensitive HPROF artifacts, including after a bridge restart."""
+        now = time.time()
+        for artifact_id, meta in list(self.artifacts.items()):
+            if force or now - meta["created"] > 45*60:
+                Path(meta["path"]).unlink(missing_ok=True)
+                del self.artifacts[artifact_id]
+        # Orphaned dumps from bridge crash are never presented for retrieval.
+        for path in self.artifacts_dir.glob("*.hprof"):
+            try:
+                if force or now - path.stat().st_mtime > 45*60:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     def adb(self, *args: str, timeout: int = 12, limit: int = 64000) -> str:
         return run(["adb", "-s", self.serial, *args], timeout=timeout, limit=limit)
 
@@ -508,6 +523,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "Pairing token invalid"})
         try:
             with LOCK:
+                self.server.lab.cleanup_artifacts()
                 return fn()
         except (ValueError, PermissionError) as e:
             self._json(400, {"error": str(e)})
@@ -640,12 +656,21 @@ def main():
     print(f"Certificate SHA-256 {fingerprint}", flush=True)
     print(f"Pairing token {token}", flush=True)
     print("Never publish token; use private tunnel, do not expose Internet", flush=True)
+    stop_cleaner = threading.Event()
+    def clean_loop():
+        while not stop_cleaner.wait(60):
+            with LOCK:
+                lab.cleanup_artifacts()
+    cleaner = threading.Thread(target=clean_loop,daemon=True,name="aster-heap-purge")
+    cleaner.start()
     try:
         server.serve_forever(poll_interval=0.3)
     finally:
+        stop_cleaner.set()
         with LOCK:
             lab.detach_debugger()
             lab.trace_stop()
+            lab.cleanup_artifacts(force=True)
         server.server_close()
 
 
