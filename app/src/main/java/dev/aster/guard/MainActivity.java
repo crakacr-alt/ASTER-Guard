@@ -465,7 +465,9 @@ public final class MainActivity extends Activity {
             }
             box.addView(text("● предоставлено   ○ не предоставлено / не применимо",11,MUTED,false),fill(20));
         }
-        box.addView(button("Реверс-инжиниринг DEX и библиотек",true,v->reverseEngineer(r)),fill(10));
+        box.addView(button("Открыть код DEX / Smali · классы и методы",true,v->openDexExplorer(r)),fill(10));
+        box.addView(button("Аудит APK, разрешений и библиотек",false,v->reverseEngineer(r)),fill(10));
+        box.addView(button("Shizuku · инструменты приложения",false,v->openShizukuActions(r)),fill(10));
         box.addView(button("Глубокий анализ APK + SHA-256",false,v->deepAnalyze(r)),fill(10));
         box.addView(button("Системная информация о приложении",false,v->{
             Intent i=new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -509,6 +511,62 @@ public final class MainActivity extends Activity {
         });
     }
 
+
+    private void openDexExplorer(AppRecord record){
+        Intent intent=new Intent(this,DexExplorerActivity.class);
+        intent.putExtra("packageName",record.packageName);
+        intent.putExtra("label",record.label);
+        startActivity(intent);
+    }
+    private void openShizukuActions(AppRecord record){
+        if(!ShizukuBridge.available()){
+            new AlertDialog.Builder(this).setTitle("Для инструментов нужен Shizuku")
+                .setMessage("Установите Shizuku и запустите его через беспроводную отладку или ADB. Root не требуется. После запуска вернитесь и откройте инструменты повторно.")
+                .setNegativeButton("Закрыть",null)
+                .setPositiveButton("Инструкция Shizuku",(d,w)->openExternal("https://shizuku.rikka.app/guide/setup/"))
+                .show();
+            return;
+        }
+        if(!ShizukuBridge.authorized()){
+            new AlertDialog.Builder(this).setTitle("Доступ через Shizuku")
+                .setMessage("Shizuku запущен, но ASTER ещё не получил разрешение. Нажмите «Разрешить», подтвердите в Shizuku и повторно откройте инструменты приложения.")
+                .setNegativeButton("Отмена",null).setPositiveButton("Разрешить",(d,w)->requestShizuku()).show();
+            return;
+        }
+        final String[] actions={
+            "Разрешения и состояние пакета (ADB)",
+            "AppOps — режимы доступа (ADB)",
+            "ОЗУ процесса · dumpsys (ADB)",
+            "Пути установленных APK (ADB)",
+            "Остановить пользовательское приложение"
+        };
+        new AlertDialog.Builder(this).setTitle("Shizuku · "+record.label)
+            .setItems(actions,(d,index)->{
+                int op=10+index;
+                if(op==14){
+                    if(record.system||record.packageName.equals(getPackageName())){
+                        showLong("Операция запрещена","Нельзя принудительно останавливать системные приложения и сам ASTER.");
+                        return;
+                    }
+                    new AlertDialog.Builder(this).setTitle("Остановить "+record.label+"?")
+                        .setMessage("Команда «am force-stop» через Shizuku принудительно завершит приложение. Несохранённые данные могут быть потеряны. Это НЕ удаляет его файлы и не очищает ОЗУ навсегда. Продолжить?")
+                        .setNegativeButton("Отмена",null)
+                        .setPositiveButton("Остановить",(dialog,which)->shizukuPackage(record,op)).show();
+                }else shizukuPackage(record,op);
+            }).setNegativeButton("Закрыть",null).show();
+    }
+    private void shizukuPackage(AppRecord record,int op){
+        Toast.makeText(this,"Shizuku: запрашиваем сведения через ADB",Toast.LENGTH_SHORT).show();
+        worker.execute(()->{
+            try{
+                String result=ShizukuBridge.packageAction(getApplicationContext(),record.packageName,op);
+                runOnUiThread(()->showLong("Shizuku · "+record.label,
+                    result.length()>26000?result.substring(0,26000)+"\n… вывод сокращён":result));
+            }catch(Exception e){
+                runOnUiThread(()->showLong("Shizuku: нет доступа",e.toString()));
+            }
+        });
+    }
 
     private void reverseEngineer(AppRecord record) {
         Toast.makeText(this,"Статический анализ APK запущен",Toast.LENGTH_SHORT).show();
@@ -888,9 +946,9 @@ public final class MainActivity extends Activity {
         sectionLabel(body,"SHIZUKU · ДОПОЛНИТЕЛЬНАЯ ДИАГНОСТИКА");
         LinearLayout shizuku=card();
         shizuku.addView(text(ShizukuBridge.status(),14,TEXT,true),fill(10));
-        shizuku.addView(text("Требуется установленный и запущенный Shizuku. Доступ ADB/shell может показать процессы и память; это не root и не настоящий debugger чужого приложения.",12,MUTED,false),fill(12));
+        shizuku.addView(text("Запустите Shizuku через беспроводную отладку или ADB, затем разрешите доступ ASTER. В карточке любого пользовательского приложения появятся диагностика пакета, AppOps, сведения о памяти и остановка по подтверждению. Это ADB/shell, не root и не debugger чужого процесса.",12,MUTED,false),fill(12));
         if(!ShizukuBridge.available()){
-            shizuku.addView(button("Открыть Shizuku",false,v->openExternal("https://shizuku.rikka.app/")),fill(10));
+            shizuku.addView(button("Как установить и запустить Shizuku",false,v->openExternal("https://shizuku.rikka.app/guide/setup/")),fill(10));
         }else if(!ShizukuBridge.authorized()){
             shizuku.addView(button("Разрешить Shizuku",false,v->requestShizuku()),fill(10));
         }else{
@@ -998,12 +1056,12 @@ public final class MainActivity extends Activity {
         LinearLayout limits=card();
         limits.addView(spaced("ОГРАНИЧЕНИЯ",11,AMBER,true),fill(12));
         limits.addView(text("Не заменяет полноценную антивирусную защиту",17,TEXT,true),fill(8));
-        limits.addView(text("Нет динамического дебаггера чужих процессов, живого VPN-сниффера, расшифровки HTTPS и гарантированного поиска всех CVE ядра. Для полной диагностики требуются специализированные инструменты и контролируемые условия.",13,MUTED,false));
+        limits.addView(text("DEX/Smali показывает инструкции APK, но не исходный Java-код и не живую трассировку чужого процесса. Живой анализ сети требует отдельно установленного PCAPdroid. HTTPS не расшифровывается. Shizuku даёт некоторые ADB-команды, но не root.",13,MUTED,false));
         body.addView(limits,fill(17));
 
         LinearLayout about=card();
-        about.addView(text("ASTER Guard 0.3.0",16,TEXT,true),fill(7));
-        about.addView(text("Java · Android 6+ · arm32 / arm64 · без ABI-специфичных библиотек",12,MUTED,false),fill(11));
+        about.addView(text("ASTER Guard 0.5.0",16,TEXT,true),fill(7));
+        about.addView(text("Java · Android 7+ · ARMv7 / ARM64 · DEX/Smali, Shizuku",12,MUTED,false),fill(11));
         if(newRelease!=null){
             about.addView(button("Доступно обновление "+newRelease.version,true,v->openExternal(newRelease.url)),fill(10));
         }
@@ -1021,7 +1079,7 @@ public final class MainActivity extends Activity {
         nav.setBackgroundColor(0xFF0E1420);
         String[] icons={"◈","▣","⌁","◉","⚙"};
         String[] labels={"Обзор","APK","Сеть","Система","Опции"};
-        for(int i=0;i<4;i++) {
+        for(int i=0;i<labels.length;i++) {
             final int index=i;
             LinearLayout item=column();
             item.setGravity(Gravity.CENTER);
