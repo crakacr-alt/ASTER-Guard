@@ -122,22 +122,22 @@ jobs:
         with:
           name: ASTER-Guard-debug-apk
           path: release-files
-      - name: Publish v0.7.1 standard GitHub release (debug-key APK)
+      - name: Publish v0.7.2 standard GitHub release (debug-key APK)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.7.1"
-          APK="release-files/ASTER-Guard-v0.7.1-debug.apk"
+          TAG="v0.7.2"
+          APK="release-files/ASTER-Guard-v0.7.2-debug.apk"
           mv release-files/app-debug.apk "$APK"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already published; not replacing an existing versioned APK."
             exit 0
           fi
           cat > release-notes.md <<'EOF'
-          # ASTER Guard 0.7.1 · Test build
+          # ASTER Guard 0.7.2 · Test build
 
           **Direct Android APK** is attached below. Minimum Android 7.0 (API 24); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
 
@@ -149,5 +149,5 @@ jobs:
 
           Source: https://github.com/crakacr-alt/ASTER-Guard
           EOF
-          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.7.1 · Android APK (debug signing)" --notes-file release-notes.md --latest
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.7.2 · Android APK (debug signing)" --notes-file release-notes.md --latest
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG"

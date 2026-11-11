@@ -53,6 +53,16 @@ class BridgeValidation(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     lab.debug_command(bad)
 
+    def test_sensitive_heap_dumps_are_erased_on_expiry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lab=bridge.Lab("emulator-5554",pathlib.Path(tmp))
+            target=pathlib.Path(tmp)/"deadbeef.hprof"
+            target.write_bytes(b"private memory")
+            lab.artifacts["deadbeef"]={"path":str(target),"created":0}
+            lab.cleanup_artifacts()
+            self.assertFalse(target.exists())
+            self.assertNotIn("deadbeef",lab.artifacts)
+
     def test_guest_serial_cannot_select_physical_phone_or_remote_adb(self):
         with tempfile.TemporaryDirectory() as tmp:
             for bad in ["R58T000000","192.168.0.4:5555","emulator-5554;id"]:

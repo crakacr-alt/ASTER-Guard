@@ -23,3 +23,10 @@ All controller actions and reports are inside ASTER Guard Android UI. The guest 
 ## 0.7.1 live trace
 
 Guest bridge additionally supports a bounded in-memory PID-scoped live logcat stream (start/read/stop). This records only logcat and is not complete syscall or file-action tracing. No raw payload is sent to unrelated services.
+
+
+## v0.7.2 additional safeguards
+
+- Guest launch requires explicit user confirmation and warns about NAT. The bridge never claims root alone guarantees malware containment.
+- Host purge timer deletes stored HPROF files after 45 minutes, and again on bridge shutdown. Orphan dumps from crashes are removed when stale. Saving a dump to your phone via SAF remains under your control.
+- JDWP step-into and step-over UI commands map to the correct debugger operations. No production signing key created.
