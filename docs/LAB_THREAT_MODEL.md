@@ -18,3 +18,8 @@ All controller actions and reports are inside ASTER Guard Android UI. The guest 
 - No unverified claim to track every filesystem operation, API call or syscall; snapshots and logcat are incomplete.
 - No Android guest running inside the primary phone, no native LLDB for any arbitrary nondebuggable process, no finished APK repacker/signing system, and no assurance that rooted malware cannot exploit a hypervisor vulnerability.
 - Python unit tests test input guards, not a full isolated lab. Physical-host end-to-end sandbox isolation is untested.
+
+
+## 0.7.1 live trace
+
+Guest bridge additionally supports a bounded in-memory PID-scoped live logcat stream (start/read/stop). This records only logcat and is not complete syscall or file-action tracing. No raw payload is sent to unrelated services.
