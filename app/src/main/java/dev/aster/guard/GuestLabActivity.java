@@ -142,6 +142,12 @@ public final class GuestLabActivity extends Activity {
                 .show();
         }));
         heading("Live-трассировка · выбранный PID");
+        body.addView(button("Live: начать запись Logcat выбранного PID",()->request(
+            "Live Logcat включён",()->lab.post("/v1/trace/start",new JSONObject()),false)));
+        body.addView(button("Live: показать накопленные события",()->request(
+            "Live Logcat · накопленные события",()->lab.get("/v1/trace"),false)));
+        body.addView(button("Live: остановить запись Logcat",()->request(
+            "Live Logcat остановлен",()->lab.post("/v1/trace/stop",new JSONObject()),false)));
         body.addView(button("Logcat · последние записи PID",()->request(
             "Logcat выбранного процесса",()->lab.get("/v1/logs"),false)));
         body.addView(button("Память /proc и native backtrace",()->request(
