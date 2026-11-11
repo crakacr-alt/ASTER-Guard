@@ -257,6 +257,15 @@ public final class FileInspector {
                     r.add(CAUTION,"ZIP содержит путь вне архива",
                         "Вложенная запись содержит ../ или абсолютный путь. ASTER ничего не извлекает на диск.");
                 }
+                if(s.equals("androidmanifest.xml") && (r.extension.equals("apk")||r.extension.equals("zip"))){
+                    r.apk=true;r.format="Android APK (ZIP)";
+                }
+                if(s.equals("word/document.xml"))r.format="Microsoft Word DOCX (OOXML)";
+                if(s.equals("xl/workbook.xml"))r.format="Microsoft Excel XLSX (OOXML)";
+                if(s.equals("ppt/presentation.xml"))r.format="Microsoft PowerPoint PPTX (OOXML)";
+                if(s.equals("mimetype")){
+                    // ODF files are ZIP containers too; reported as ZIP if no XML part found.
+                }
                 if(s.matches("classes[0-9]*\\.dex"))r.classesDex++;
                 if(s.startsWith("lib/")&&s.endsWith(".so"))r.nativeLibraries++;
                 if(s.endsWith("vbaproject.bin")||s.endsWith("/vba.bin")){

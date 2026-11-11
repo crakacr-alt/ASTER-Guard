@@ -41,7 +41,7 @@ public final class DexExplorerActivity extends Activity {
     private TextView title,subtitle;
     private DexCodeReader.Item currentClass;
     private Method currentMethod;
-    private String pkg="",label="",currentCode="";
+    private String pkg="",label="",currentCode="",archivePath="";
     private int page=0;
     private boolean appOnly=true,loading=true;
     private String notes="";
@@ -50,7 +50,20 @@ public final class DexExplorerActivity extends Activity {
         super.onCreate(state);
         getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
         pkg=getIntent().getStringExtra("packageName");
-        if(pkg==null||pkg.isEmpty()){finish();return;}
+        archivePath=getIntent().getStringExtra("archivePath");
+        if(archivePath==null)archivePath="";
+        if(!archivePath.isEmpty()){
+            try{
+                java.io.File selected=new java.io.File(archivePath).getCanonicalFile();
+                java.io.File sandbox=getCacheDir().getCanonicalFile();
+                if(!selected.isFile() || selected.length()>96L*1024*1024 ||
+                    !selected.getName().endsWith(".apk") ||
+                    !selected.getParentFile().equals(sandbox))throw new SecurityException("Недопустимый архив");
+                archivePath=selected.getAbsolutePath();
+            }catch(Exception e){finish();return;}
+        }
+        if((pkg==null||pkg.isEmpty())&&archivePath.isEmpty()){finish();return;}
+        if(pkg==null||pkg.isEmpty())pkg="unknown";
         label=getIntent().getStringExtra("label");
         if(label==null||label.isEmpty())label=pkg;
         build();
@@ -106,9 +119,13 @@ public final class DexExplorerActivity extends Activity {
         subtitle.setText("Индексируем классы APK и split APK (только по нажатию)...");
         worker.execute(()->{
             try{
-                ApplicationInfo info=getPackageManager().getApplicationInfo(pkg,0);
-                List<String> paths=new ArrayList<>();paths.add(info.sourceDir);
-                if(info.splitSourceDirs!=null)java.util.Collections.addAll(paths,info.splitSourceDirs);
+                List<String> paths=new ArrayList<>();
+                if(!archivePath.isEmpty())paths.add(archivePath);
+                else{
+                    ApplicationInfo info=getPackageManager().getApplicationInfo(pkg,0);
+                    paths.add(info.sourceDir);
+                    if(info.splitSourceDirs!=null)java.util.Collections.addAll(paths,info.splitSourceDirs);
+                }
                 DexCodeReader.Index idx=reader.index(paths.toArray(new String[0]),pkg);
                 runOnUiThread(()->{
                     if(isFinishing()||isDestroyed())return;

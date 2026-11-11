@@ -290,6 +290,11 @@ public final class MainActivity extends Activity {
             else startScan();
         }));
         body.addView(hero,fill(18));
+        LinearLayout fileCard=card();
+        fileCard.addView(text("Проверка файла из памяти",18,TEXT,true),fill(8));
+        fileCard.addView(text("APK без установки, EXE, PDF, Word, PowerPoint, PNG и любые другие файлы. Проверяем формат, SHA-256, скрипты и вложения локально.",13,MUTED,false),fill(12));
+        fileCard.addView(button("Выбрать и проверить файл",true,v->openFileScanner()));
+        body.addView(fileCard,fill(18));
 
         LinearLayout metrics=row();
         metrics.addView(metric("ПРИЛОЖЕНИЯ",lastScan==0?"—":String.valueOf(apps.size()),MINT),weight());
@@ -345,8 +350,13 @@ public final class MainActivity extends Activity {
         return c;
     }
 
+    private void openFileScanner(){
+        startActivity(new Intent(this,FileScanActivity.class));
+    }
+
     private void showApps() {
         sectionTitle(body,"Приложения","Подробности, разрешения и цифровые подписи");
+        body.addView(button("Проверить неустановленный APK или другой файл",true,v->openFileScanner()),fill(18));
         if(lastScan==0) {
             LinearLayout c=card();
             c.addView(text("Список появится после первой проверки",16,TEXT,true));
