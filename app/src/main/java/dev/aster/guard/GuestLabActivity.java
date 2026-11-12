@@ -321,40 +321,34 @@ public final class GuestLabActivity extends Activity {
         }
     }
     private void serverSetupGuide(){
-        String instructions="УСТАНОВКА СВОЕЙ ЛАБОРАТОРИИ\\n\\n"+
-            "1. Требуется отдельный Linux x86_64 ПК или VPS с KVM, достаточно RAM и диска. "+
-            "Используйте только выделенную машину для потенциально опасных APK.\\n\\n"+
-            "2. В терминале Ubuntu/Debian: \\n"+
-            "git clone https://github.com/crakacr-alt/ASTER-Guard.git\\n"+
-            "cd ASTER-Guard\\n"+
-            "sudo bash lab/auto_setup_server.sh\\n\\n"+
-            "3. По умолчанию мост работает только на серверном 127.0.0.1. "+
-            "Для подключения телефона укажите приватный IP: \\n"+
-            "sudo bash lab/auto_setup_server.sh --bind 192.168.1.100\\n"+
-            "Для Tailscale используйте частный 100.x.x.x адрес, не публикуйте порт в интернете.\\n\\n"+
+        String commands="git clone https://github.com/crakacr-alt/ASTER-Guard.git\n"+
+            "cd ASTER-Guard\n"+
+            "sudo bash lab/auto_setup_server.sh";
+        String message="СОБСТВЕННАЯ ANDROID-ЛАБОРАТОРИЯ\n\n"+
+            "Нужен отдельный Linux x86_64 ПК / VPS с доступным /dev/kvm. "+
+            "На обычном VPS без KVM Android Emulator может не работать.\n\n"+
+            "1. Выполните на своём ПК:\n\n"+commands+"\n\n"+
+            "2. По умолчанию мост слушает только 127.0.0.1 НА ПК. "+
+            "Для подключения телефона повторно запустите скрипт с фактическим "+
+            "приватным адресом, например:\n\n"+
+            "sudo bash lab/auto_setup_server.sh --bind 192.168.1.100\n\n"+
+            "3. Для Tailscale укажите приватный IP 100.x.x.x. "+
+            "Не открывайте порт 8742 в публичный интернет.\n\n"+
             "4. Скрипт выдаст HTTPS-адрес, SHA-256 сертификата и токен. "+
-            "Перенесите три значения в форму ASTER. Токен держите в секрете.\\n\\n"+
-            "5. ВАЖНО: установочный скрипт НЕ подтверждает сетевую изоляцию вредоносного ПО. "+
-            "Перед динамическим анализом отдельно ограничьте исходящий трафик гостя "+
-            "на хосте, проверьте запрет и только затем разрешайте запуск.\\n\\n"+
-            "Управление сервисами:\\n"+
-            "sudo systemctl status aster-guest aster-bridge\\n"+
-            "sudo journalctl -u aster-guest -n 40 --no-pager\\n\\n"+
-            "Подробная инструкция: github.com/crakacr-alt/ASTER-Guard/blob/main/docs/HOST_AUTOINSTALL.md";
-        String message=instructions.replace("\\\\n","\\n");
+            "Вставьте эти три значения в форму подключения ASTER.\n\n"+
+            "5. Для запуска неизвестного APK настройте и отдельно ПРОВЕРЬТЕ "+
+            "сетевую изоляцию лабораторного хоста. Установщик не считает "+
+            "изолированность автоматически доказанной.\n\n"+
+            "Статус: sudo systemctl status aster-guest aster-bridge\n\n"+
+            "Полный гайд: github.com/crakacr-alt/ASTER-Guard/blob/main/docs/HOST_AUTOINSTALL.md";
         TextView info=text(message,13,TEXT);
         info.setTextIsSelectable(true);
         ScrollView scroll=new ScrollView(this);scroll.addView(info);
-        new AlertDialog.Builder(this).setTitle("Локальный ПК / собственный сервер")
-            .setView(scroll)
-            .setNegativeButton("Закрыть",null)
-            .setPositiveButton("Скопировать команды",(dialog,which)->{
-                android.content.ClipboardManager cb=(android.content.ClipboardManager)
-                    getSystemService(CLIPBOARD_SERVICE);
-                if(cb!=null)cb.setPrimaryClip(android.content.ClipData.newPlainText(
-                    "ASTER Server", "git clone https://github.com/crakacr-alt/ASTER-Guard.git\\n"+
-                    "cd ASTER-Guard\\n"+
-                    "sudo bash lab/auto_setup_server.sh"));
+        new AlertDialog.Builder(this).setTitle("Настройка Android Lab на ПК/VPS")
+            .setView(scroll).setNegativeButton("Закрыть",null)
+            .setPositiveButton("Скопировать команды",(d,w)->{
+                ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                if(cb!=null)cb.setPrimaryClip(ClipData.newPlainText("ASTER Lab setup",commands));
             }).show();
     }
     private void pair(){
