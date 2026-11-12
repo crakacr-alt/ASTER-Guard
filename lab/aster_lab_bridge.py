@@ -77,6 +77,7 @@ class Lab:
         self.jdb_output: list[str] = []
         self.forward_port: int | None = None
         self.debug_target = ""
+        self.ndk_home = os.environ.get("ANDROID_NDK_HOME", "")
         self.net_state = "unverified"  # Never imply a reliable VM network kill switch.
         self.trace_proc: subprocess.Popen | None = None
         self.trace_lines: list[str] = []
@@ -92,12 +93,13 @@ class Lab:
                 Path(meta["path"]).unlink(missing_ok=True)
                 del self.artifacts[artifact_id]
         # Orphaned dumps from bridge crash are never presented for retrieval.
-        for path in self.artifacts_dir.glob("*.hprof"):
-            try:
-                if force or now - path.stat().st_mtime > 45*60:
-                    path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        for pattern in ("*.hprof", "*.so"):
+            for path in self.artifacts_dir.glob(pattern):
+                try:
+                    if force or now - path.stat().st_mtime > 45*60:
+                        path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def adb(self, *args: str, timeout: int = 12, limit: int = 64000) -> str:
         return run(["adb", "-s", self.serial, *args], timeout=timeout, limit=limit)
@@ -466,6 +468,26 @@ class Lab:
             if host.exists() and artifact_id not in self.artifacts:
                 host.unlink()
 
+    def native_status(self) -> dict:
+        # Compilation is independent of emulator root and guest runtime.
+        from native_builder import ndk_status
+        return ndk_status(self.ndk_home)
+
+    def native_build(self, payload: dict) -> dict:
+        from native_builder import build_native
+        response=build_native(payload,self.artifacts_dir,self.ndk_home)
+        for built in response["outputs"]:
+            artifact_id=built["artifact_id"]
+            file_name=built["name"]
+            self.artifacts[artifact_id]={
+                "path":built.pop("host_path"), "name":file_name,
+                "size":built["bytes"], "sha256":built["sha256"],
+                "abi":built["abi"], "created":time.time(),"kind":"native_so",
+            }
+        self.log("ndk_build","ABIs:"+",".join(x["abi"] for x in response["outputs"]) +
+                 " · errors:"+str(len(response["failures"])))
+        return response
+
     def upload_apk(self, blob: bytes) -> dict:
         self.root_required()
         if len(blob) < 4 or len(blob) > MAX_UPLOAD:
@@ -536,6 +558,8 @@ class Handler(BaseHTTPRequestHandler):
         def run_get():
             lab = self.server.lab  # type: ignore[attr-defined]
             path = urlparse(self.path).path
+            if path == "/v1/native/status":
+                return self._json(200, lab.native_status())
             if path == "/v1/status":
                 return self._json(200, lab.status())
             if path == "/v1/packages":
@@ -567,12 +591,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(size))
-                self.send_header("Content-Disposition", 'attachment; filename="aster-heap.hprof"')
+                name=meta.get("name","aster-heap.hprof")
+                if not re.fullmatch(r"(?:lib[A-Za-z0-9_]{1,48}\\.so|aster-heap\\.hprof|[a-zA-Z0-9_.-]{1,140}\\.hprof)",name):
+                    name="aster-artifact.bin"
+                self.send_header("Content-Disposition", 'attachment; filename="'+name+'"')
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 with path.open("rb") as f:
                     shutil.copyfileobj(f, self.wfile)
-                lab.log("download_heap", artifact_id[:10])
+                lab.log("download_artifact", artifact_id[:10])
                 return
             self._json(404, {"error": "Unknown endpoint"})
         self._guard(run_get)
@@ -586,9 +613,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, lab.upload_apk(blob))
             if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
                 raise ValueError("Expected application/json")
-            obj = json.loads(self._read(MAX_JSON))
+            request_cap=150000 if path == "/v1/native/build" else MAX_JSON
+            obj = json.loads(self._read(request_cap))
             if not isinstance(obj, dict):
                 raise ValueError("Expected JSON object")
+            if path == "/v1/native/build":
+                return self._json(200, lab.native_build(obj))
             if path == "/v1/select":
                 return self._json(200, lab.select(obj.get("package", "")))
             if path == "/v1/network":
