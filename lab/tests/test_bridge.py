@@ -1,11 +1,13 @@
 """Pure unit tests for controller guards. Do not launch ADB or execute any APK."""
 import importlib.util
 import pathlib
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
 SRC=pathlib.Path(__file__).resolve().parents[1]/"aster_lab_bridge.py"
+sys.path.insert(0,str(SRC.parent))
 spec=importlib.util.spec_from_file_location("aster_lab_bridge",SRC)
 bridge=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)

@@ -40,13 +40,13 @@ class SnapshotTests(unittest.TestCase):
                 self.root_calls += 1
             def adb(self, *args, **kwargs):
                 self.calls.append(args)
-                if args[-3:] == ("pm", "list", "packages", "-3"):
+                if args[-4:] == ("pm", "list", "packages", "-3"):
                     return "package:com.example.test\npackage:com.example.other\n"
                 if "stat -c" in " ".join(args):
                     return "/data/user/0/com.example.test/settings.xml|33|1700\n"
                 if args[:4] == ("shell", "ps", "-A", "-o"):
                     return "PID NAME\n52 com.example.test\n99 system_server"
-                if args[:3] == ("shell", "sh", "-c") and len(args) == 3:
+                if args[:3] == ("shell", "sh", "-c") and len(args) == 4:
                     return "com.example.test\ncom.example.other\n"
                 return "0"
         fake = FakeLab()
