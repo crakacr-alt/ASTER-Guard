@@ -63,6 +63,50 @@ class BridgeValidation(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertNotIn("deadbeef",lab.artifacts)
 
+    def test_sandbox_staging_never_installs_or_executes_apk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lab=bridge.Lab("emulator-5554",pathlib.Path(tmp))
+            with mock.patch.object(lab,"adb") as adb:
+                result=lab.sandbox_stage(b"PK\x03\x04" + b"dummy test APK")
+                self.assertFalse(result["installed"])
+                self.assertFalse(result["executed"])
+                self.assertIn(result["artifact_id"],lab.artifacts)
+                adb.assert_not_called()
+
+    def test_sandbox_execution_blocked_without_verified_host_egress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(__import__("os").environ,
+                                 {"ASTER_LAB_EGRESS_ISOLATED":""}):
+                lab=bridge.Lab("emulator-5554",pathlib.Path(tmp))
+            staged=lab.sandbox_stage(b"PK\x03\x04" + b"dummy APK")
+            with mock.patch.object(lab,"adb") as adb:
+                with self.assertRaisesRegex(PermissionError,"host"):
+                    lab.sandbox_begin({
+                        "artifact_id":staged["artifact_id"],
+                        "duration_seconds":15,
+                        "acknowledge_lab_risk":True,
+                    })
+                adb.assert_not_called()
+            self.assertEqual("idle",lab.sandbox_status()["status"])
+
+    def test_sandbox_rejects_unbounded_duration_and_wrong_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lab=bridge.Lab("emulator-5554",pathlib.Path(tmp))
+            staged=lab.sandbox_stage(b"PK\x03\x04" + b"test APK")
+            for duration in (0,10,121,"30",True):
+                with self.assertRaises(ValueError):
+                    lab.sandbox_begin({
+                        "artifact_id":staged["artifact_id"],
+                        "duration_seconds":duration,
+                        "acknowledge_lab_risk":True,
+                    })
+            with self.assertRaises(ValueError):
+                lab.sandbox_begin({
+                    "artifact_id":"../../danger",
+                    "duration_seconds":30,
+                    "acknowledge_lab_risk":True,
+                })
+
     def test_guest_serial_cannot_select_physical_phone_or_remote_adb(self):
         with tempfile.TemporaryDirectory() as tmp:
             for bad in ["R58T000000","192.168.0.4:5555","emulator-5554;id"]:
