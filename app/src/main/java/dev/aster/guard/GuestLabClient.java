@@ -116,14 +116,42 @@ public final class GuestLabClient {
         return response(connection(path,"GET"));
     }
     public JSONObject post(String path,JSONObject data)throws Exception{
+        return postJson(path,data,8192,90000);
+    }
+    private JSONObject postJson(String path,JSONObject data,int cap,int readTimeout)throws Exception{
         HttpsURLConnection conn=connection(path,"POST");
         conn.setDoOutput(true);
+        conn.setReadTimeout(readTimeout);
         byte[] bytes=data.toString().getBytes("UTF-8");
-        if(bytes.length>8192)throw new IOException("Слишком большой запрос");
+        if(bytes.length>cap)throw new IOException("Слишком большой запрос");
         conn.setRequestProperty("Content-Type","application/json");
         conn.setFixedLengthStreamingMode(bytes.length);
         try(OutputStream out=conn.getOutputStream()){out.write(bytes);}
         return response(conn);
+    }
+    /** User explicitly selected one UTF-8 C/C++ source file (up to 64 KiB). */
+    public JSONObject buildNative(byte[] code,String language,String[] abis,int api,String library)throws Exception{
+        if(code==null||code.length<1||code.length>64*1024)
+            throw new IOException("Исходник должен быть от 1 до 64 КиБ");
+        if(!"c".equals(language)&&!"cpp".equals(language))
+            throw new IOException("Выберите C или C++");
+        if(abis==null||abis.length<1||abis.length>4)
+            throw new IOException("Выберите архитектуру");
+        java.util.Set<String> choices=new java.util.HashSet<>(
+            java.util.Arrays.asList("armeabi-v7a","arm64-v8a","x86","x86_64"));
+        org.json.JSONArray targets=new org.json.JSONArray();
+        for(String abi:abis){
+            if(!choices.remove(abi))throw new IOException("Неверная архитектура");
+            targets.put(abi);
+        }
+        if(api<24||api>35)throw new IOException("Android API 24–35");
+        if(library==null||!library.matches("lib[A-Za-z0-9_]{1,48}\\.so"))
+            throw new IOException("Имя должно иметь вид libexample.so");
+        JSONObject payload=new JSONObject()
+            .put("language",language).put("abis",targets).put("api",api)
+            .put("library",library)
+            .put("source_b64",android.util.Base64.encodeToString(code,android.util.Base64.NO_WRAP));
+        return postJson("/v1/native/build",payload,150000,180000);
     }
     public JSONObject uploadApk(File file)throws Exception{
         if(!file.isFile()||file.length()<4||file.length()>96L*1024*1024)
