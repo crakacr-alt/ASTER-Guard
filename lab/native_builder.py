@@ -14,7 +14,6 @@ import hashlib
 import os
 from pathlib import Path
 import re
-import resource
 import shutil
 import subprocess
 import tempfile
@@ -130,11 +129,15 @@ def sandbox_command(ndk_root: Path, work: Path, abi: str,
     return argv
 
 
-def _limits():
-    resource.setrlimit(resource.RLIMIT_CPU, (35, 36))
-    resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (24 * 1024**2, 24 * 1024**2))
-    resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
+def limit_command(argv: list[str]) -> list[str]:
+    """Apply fixed resource limits without unsafe preexec_fn in a threaded bridge."""
+    prlimit=shutil.which("prlimit")
+    if not prlimit:
+        raise RuntimeError("prlimit required; no unrestricted compiler fallback")
+    return [
+        prlimit, "--cpu=35", "--as=2147483648",
+        "--fsize=25165824", "--nofile=128", "--", *argv
+    ]
 
 
 def build_native(data: dict, artifacts_dir: Path, ndk_home: str) -> dict:
@@ -154,12 +157,12 @@ def build_native(data: dict, artifacts_dir: Path, ndk_home: str) -> dict:
             work.chmod(0o700)
             (work/("source." + ("cpp" if lang == "cpp" else "c"))).write_bytes(source)
             command = sandbox_command(root, work, abi, api, lang, library)
+            command = limit_command(command)
             try:
                 with tempfile.TemporaryFile(mode="w+b") as log:
                     proc = subprocess.run(
                         command, stdin=subprocess.DEVNULL, stdout=log,
                         stderr=subprocess.STDOUT, timeout=45, check=False,
-                        preexec_fn=_limits,
                     )
                     log.seek(0)
                     diagnostics = log.read(MAX_LOG).decode("utf-8", "replace")
