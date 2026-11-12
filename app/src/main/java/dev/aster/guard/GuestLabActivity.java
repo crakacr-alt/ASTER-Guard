@@ -6,6 +6,9 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.database.Cursor;
+import android.provider.OpenableColumns;
+import java.io.ByteArrayOutputStream;
+import android.database.Cursor;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
@@ -36,7 +39,7 @@ import java.util.concurrent.Executors;
 public final class GuestLabActivity extends Activity {
     private static final int BG=0xff0f1523,TEXT=0xffedf6fa,MINT=0xff8cecd4,
         MUTED=0xffa4b8c8,AMBER=0xffffca82;
-    private static final int PICK_APK=5041,SAVE_HEAP=5042;
+    private static final int PICK_APK=5041,SAVE_HEAP=5042,PICK_NATIVE_SOURCE=5043,SAVE_NATIVE_SO=5044;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private GuestLabClient lab;
     private LinearLayout root,body;
@@ -45,6 +48,11 @@ public final class GuestLabActivity extends Activity {
     private JSONObject status;
     private final List<String> packages=new ArrayList<>();
     private String selected="",output="",outputTitle="Отчёт",heapId="",heapHash="",heapName="";
+    private JSONArray nativeOutputs=new JSONArray();
+    private String[] compileAbis={"armeabi-v7a","arm64-v8a"};
+    private String compileLibrary="libastercustom.so";
+    private int compileApi=24;
+    private String nativeArtifactId="",nativeArtifactSha="",nativeArtifactName="";
     private boolean busy;
     private int dp(int x){return Math.round(getResources().getDisplayMetrics().density*x);}
 
@@ -108,7 +116,7 @@ public final class GuestLabActivity extends Activity {
         line(busy?"Выполняется команда в отдельном потоке…":"Мост сопряжён · TLS-пин проверяется при каждом запросе",13,busy?AMBER:MINT);
         body.addView(button("Проверить статус гостевой Android",()->request("Статус Android",()->lab.get("/v1/status"),true)));
         body.addView(button("Отключить лабораторию",()->{
-            lab=null;status=null;packages.clear();selected="";heapId="";token="";render();
+            lab=null;status=null;packages.clear();selected="";heapId="";token="";nativeOutputs=new JSONArray();render();
         }));
         if(status!=null){
             heading("Гость и root");
@@ -122,6 +130,18 @@ public final class GuestLabActivity extends Activity {
                  "реального вредоносного ПО не гарантируется. Переключатель сети намеренно не "+
                  "имитирует защиту.",12,AMBER);
         }
+        heading("Сборка C/C++ → нативные .so (Android NDK)");
+        line("Соберите собственный исходник для ARM32/ARM64/x86/x86_64. "+
+            "Компиляция идёт на подключённом лабораторном ПК в offline-песочнице bubblewrap. "+
+            "На телефоне исходный код не выполняется; собранный ELF не запускается на хосте.",12,MUTED);
+        body.addView(button("Проверить готовность NDK и песочницы",()->
+            request("NDK / sandbox",()->lab.get("/v1/native/status"),false)));
+        body.addView(button("Выбрать .c/.cpp и собрать библиотеку",this::chooseNativeOptions));
+        if(nativeOutputs.length()>0)
+            body.addView(button("Сохранить собранную .so",this::chooseNativeArtifact));
+        line("Сохранённую .so затем выберите в ASTER → Проверка файла → APK Editor → "+
+            "«Добавить/заменить .so». Автоматического перевода готовых ARM32-бинарников "+
+            "в ARM64 нет: нужен исходный C/C++ код.",12,AMBER);
         heading("Гостевая сеть (мягкие переключатели)");
         body.addView(button("Отключить Wi-Fi и мобильные данные в госте",()->network(false)));
         body.addView(button("Включить Wi-Fi и мобильные данные в госте",()->network(true)));
@@ -208,7 +228,7 @@ public final class GuestLabActivity extends Activity {
         try{
             GuestLabClient tmp=new GuestLabClient(server,fingerprint,token);
             lab=tmp;
-            request("Гостевой Android",()->tmp.get("/v1/status"),true);
+            request("NDK / sandbox",()->tmp.get("/v1/native/status"),false);
         }catch(Exception e){error("Не удалось настроить TLS",e);}
     }
     private interface Task {JSONObject run()throws Exception;}
@@ -227,6 +247,10 @@ public final class GuestLabActivity extends Activity {
                 runOnUiThread(()->{
                     if(isDestroyed()||isFinishing())return;
                     busy=false;outputTitle=title;output=result.toString();
+                    if("NDK сборка".equals(title)){
+                        JSONArray created=result.optJSONArray("outputs");
+                        nativeOutputs=created==null?new JSONArray():created;
+                    }
                     if(safeStatus!=null){
                         status=safeStatus;
                         selected=status.optString("selected_package","");
@@ -336,6 +360,120 @@ public final class GuestLabActivity extends Activity {
             .setPositiveButton("Отправить",(d,w)->debugCommand(mode,input.getText().toString().trim()))
             .show();
     }
+    private void chooseNativeOptions(){
+        final String[] labels={
+            "ARM 32 + ARM 64 (две .so)","Только ARM32 · armeabi-v7a",
+            "Только ARM64 · arm64-v8a",
+            "Только x86 (32-bit)","Только x86_64 (64-bit)",
+            "Все четыре ABI"
+        };
+        new AlertDialog.Builder(this).setTitle("Целевые архитектуры")
+            .setItems(labels,(dialog,index)->configureNative(index))
+            .setNegativeButton("Отмена",null).show();
+    }
+    private void configureNative(int selectedIndex){
+        final String[][] options={
+            {"armeabi-v7a","arm64-v8a"},
+            {"armeabi-v7a"},{"arm64-v8a"},{"x86"},{"x86_64"},
+            {"armeabi-v7a","arm64-v8a","x86","x86_64"}
+        };
+        final String[] abis=options[selectedIndex];
+        LinearLayout fields=new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        fields.setPadding(dp(18),dp(8),dp(18),dp(8));
+        EditText library=input("libexample.so",compileLibrary,false);
+        EditText level=input("API 24–35",Integer.toString(compileApi),false);
+        level.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        fields.addView(text("Имя нативной библиотеки (.so)",13,MUTED));
+        fields.addView(library);
+        fields.addView(text("Минимальный Android API для C/C++",13,MUTED));
+        fields.addView(level);
+        new AlertDialog.Builder(this).setTitle("Сборка Android NDK")
+            .setView(fields)
+            .setMessage("После выбора файл исходного кода C/C++ будет отправлен ТОЛЬКО "+
+                "на сопряжённый лабораторный ПК по HTTPS. "+
+                "Без NDK и bubblewrap сборка не начнётся. "+
+                "Результат будет отдельным ELF-файлом для выбранных ABI.")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Выбрать исходник",(d,w)->{
+                String lib=library.getText().toString().trim();
+                int api;
+                try{api=Integer.parseInt(level.getText().toString().trim());}
+                catch(NumberFormatException exc){error("API",new Exception("Нужен номер API 24–35"));return;}
+                if(api<24||api>35||!lib.matches("lib[A-Za-z0-9_]{1,48}\\.so")){
+                    error("Параметры",new Exception("API 24–35, имя libexample.so"));return;
+                }
+                compileAbis=abis;compileLibrary=lib;compileApi=api;
+                Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                picker.addCategory(Intent.CATEGORY_OPENABLE);
+                picker.setType("*/*");
+                picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivityForResult(picker,PICK_NATIVE_SOURCE);
+            }).show();
+    }
+    private String sourceLanguage(Uri uri)throws Exception{
+        String name="";
+        try(Cursor c=getContentResolver().query(uri,
+            new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){
+            if(c!=null&&c.moveToFirst()){
+                int col=c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if(col>=0)name=c.getString(col);
+            }
+        }
+        if(name==null)name="";
+        String lower=name.toLowerCase(java.util.Locale.ROOT);
+        if(lower.endsWith(".cpp")||lower.endsWith(".cc")||lower.endsWith(".cxx"))return "cpp";
+        if(lower.endsWith(".c"))return "c";
+        throw new java.io.IOException("Выберите файл .c, .cpp, .cc или .cxx");
+    }
+    private void compileSelectedSource(Uri uri){
+        if(busy||lab==null)return;
+        final String language;
+        try{language=sourceLanguage(uri);}
+        catch(Exception e){error("C/C++",e);return;}
+        final String[] abis=compileAbis.clone();
+        final String library=compileLibrary;
+        final int api=compileApi;
+        request("NDK сборка",()->{
+            byte[] source;
+            try(InputStream in=getContentResolver().openInputStream(uri)){
+                if(in==null)throw new java.io.IOException("Не удалось открыть исходник");
+                ByteArrayOutputStream out=new ByteArrayOutputStream();
+                byte[] buffer=new byte[8192];int n;
+                while((n=in.read(buffer))!=-1){
+                    if(out.size()+n>64*1024)
+                        throw new java.io.IOException("Файл исходника превышает 64 КиБ");
+                    out.write(buffer,0,n);
+                }
+                source=out.toByteArray();
+            }
+            return lab.buildNative(source,language,abis,api,library);
+        },false);
+    }
+    private void chooseNativeArtifact(){
+        if(nativeOutputs.length()==0)return;
+        String[] choices=new String[nativeOutputs.length()];
+        for(int i=0;i<nativeOutputs.length();i++){
+            JSONObject item=nativeOutputs.optJSONObject(i);
+            choices[i]=item==null?"Ошибка данных":
+                item.optString("abi")+" · "+
+                item.optString("name")+" · "+item.optInt("bytes")+" байт";
+        }
+        new AlertDialog.Builder(this).setTitle("Сохранить собранную библиотеку")
+            .setItems(choices,(d,which)->{
+                JSONObject item=nativeOutputs.optJSONObject(which);
+                if(item==null)return;
+                nativeArtifactId=item.optString("artifact_id");
+                nativeArtifactSha=item.optString("sha256");
+                nativeArtifactName=item.optString("name","libastercustom.so");
+                if(!nativeArtifactId.matches("[0-9a-f]{32}"))return;
+                Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/octet-stream");
+                intent.putExtra(Intent.EXTRA_TITLE,nativeArtifactName);
+                startActivityForResult(intent,SAVE_NATIVE_SO);
+            }).setNegativeButton("Отмена",null).show();
+    }
     private void saveDump(){
         if(heapId.isEmpty())return;
         Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -348,7 +486,29 @@ public final class GuestLabActivity extends Activity {
         super.onActivityResult(code,result,data);
         if(result!=RESULT_OK||data==null||data.getData()==null)return;
         Uri uri=data.getData();
-        if(code==SAVE_HEAP){
+        if(code==PICK_NATIVE_SOURCE){
+            compileSelectedSource(uri);
+        }else if(code==SAVE_NATIVE_SO){
+            if(busy||nativeArtifactId.isEmpty()||lab==null)return;
+            busy=true;render();
+            final String id=nativeArtifactId,hash=nativeArtifactSha;
+            worker.execute(()->{
+                try(OutputStream out=getContentResolver().openOutputStream(uri,"w")){
+                    if(out==null)throw new java.io.IOException("Не удалось открыть место сохранения");
+                    String receipt=lab.download(id,out,hash);
+                    runOnUiThread(()->{
+                        if(isDestroyed()||isFinishing())return;
+                        busy=false;outputTitle="Нативная .so сохранена";
+                        output=receipt+"\nТеперь импортируйте её в APK Editor.";
+                        render();
+                    });
+                }catch(Exception e){
+                    runOnUiThread(()->{
+                        busy=false;error("Сохранение .so",e);render();
+                    });
+                }
+            });
+        }else if(code==SAVE_HEAP){
             if(busy||heapId.isEmpty())return;
             busy=true;render();
             final String id=heapId,hash=heapHash;
