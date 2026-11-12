@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import ipaddress
 import json
 import re
 import time
@@ -83,6 +84,43 @@ def file_metadata(raw: str) -> dict[str, dict]:
     return result
 
 
+def parse_remote_endpoints(raw: str, table: str) -> list[str]:
+    """Passive /proc/net snapshot. Connections belong to entire guest, not one app."""
+    if table not in ("tcp", "tcp6", "udp", "udp6"):
+        return []
+    result: set[str] = set()
+    for line in raw.splitlines()[1:300]:
+        fields = line.split()
+        if len(fields) < 4 or ":" not in fields[2]:
+            continue
+        ip_hex, _, port_hex = fields[2].partition(":")
+        try:
+            port = int(port_hex, 16)
+            raw_bytes = bytes.fromhex(ip_hex)
+            if port == 0:
+                continue
+            if table in ("tcp", "udp") and len(raw_bytes) == 4:
+                address = str(ipaddress.IPv4Address(raw_bytes[::-1]))
+                if address == "0.0.0.0":
+                    continue
+            elif table in ("tcp6", "udp6") and len(raw_bytes) == 16:
+                # Linux /proc/net/tcp6 hex stores little-endian 32-bit words.
+                host_bytes = b"".join(raw_bytes[x:x+4][::-1] for x in range(0, 16, 4))
+                address = str(ipaddress.IPv6Address(host_bytes))
+                if address == "::":
+                    continue
+            else:
+                continue
+            if not 0 < port <= 65535:
+                continue
+            result.add(table + "://" + address + ":" + str(port))
+            if len(result) >= 120:
+                break
+        except (ValueError, IndexError):
+            continue
+    return sorted(result)
+
+
 def snapshot(lab, package: str = "") -> dict[str, Any]:
     """Capture limited guest observables; never interpret absence as safe."""
     lab.root_required()
@@ -134,12 +172,15 @@ def snapshot(lab, package: str = "") -> dict[str, Any]:
             settings[ns + "/" + name] = hashlib.sha256(value.encode()).hexdigest() if ok else None
 
     network: dict[str, str] = {}
+    endpoints: set[str] = set()
     for name in ("tcp", "tcp6", "udp", "udp6"):
         value, ok = _optional_adb(lab, "shell", "cat", "/proc/net/" + name,
                                   timeout=6, limit=16000)
-        # Do not capture memory payloads or network traffic: kernel table snapshot only.
+        # Passive guest-wide kernel table only; no packet payload, no per-app attribution.
         network[name] = hashlib.sha256(value.encode()).hexdigest() if ok else ""
-        if not ok:
+        if ok:
+            endpoints.update(parse_remote_endpoints(value, name))
+        else:
             quality.append("/proc/net/" + name + " unavailable")
 
     data: dict[str, Any] = {
@@ -150,6 +191,7 @@ def snapshot(lab, package: str = "") -> dict[str, Any]:
         "app_data_root_names": app_dirs,
         "settings_sha256": settings,
         "network_table_sha256": network,
+        "network_guest_endpoints": sorted(endpoints)[:120],
         "coverage": {
             "root_guest": True,
             "file_metadata_only": True,
@@ -230,6 +272,10 @@ def diff(before: dict, after: dict) -> dict[str, Any]:
         "target_files_modified": modified[:MAX_FILES],
         "settings_changed": changed_settings,
         "network_tables_changed": network_changed,
+        "network_endpoints_appeared": sorted(
+            set(after.get("network_guest_endpoints", [])) -
+            set(before.get("network_guest_endpoints", []))
+        )[:120],
         "processes_appeared_at_endpoint": sorted(end_process - start_process)[:120],
         "processes_disappeared_at_endpoint": sorted(start_process - end_process)[:120],
         "appops_changed": before.get("appops", "") != after.get("appops", ""),
@@ -297,6 +343,7 @@ def summary(report: dict[str, Any]) -> dict[str, Any]:
         "new_packages": len(comp.get("installed_packages", [])),
         "changed_settings": len(comp.get("settings_changed", [])),
         "network_tables_changed": len(comp.get("network_tables_changed", [])),
+        "guest_endpoints_appeared": len(comp.get("network_endpoints_appeared", [])),
         "restored": (report.get("restore") or {}).get("verified", False),
         "events": len(report.get("timeline", [])),
         "errors": report.get("errors", [])[-5:],
