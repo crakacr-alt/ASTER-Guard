@@ -153,10 +153,16 @@ public final class GuestLabClient {
             .put("source_b64",android.util.Base64.encodeToString(code,android.util.Base64.NO_WRAP));
         return postJson("/v1/native/build",payload,150000,240000);
     }
+    public JSONObject stageSandboxApk(File file)throws Exception{
+        return uploadApkAt(file,"/v1/sandbox/stage");
+    }
     public JSONObject uploadApk(File file)throws Exception{
+        return uploadApkAt(file,"/v1/upload");
+    }
+    private JSONObject uploadApkAt(File file,String endpoint)throws Exception{
         if(!file.isFile()||file.length()<4||file.length()>96L*1024*1024)
             throw new IOException("Для гостевой установки требуется APK 1–96 МиБ");
-        HttpsURLConnection conn=connection("/v1/upload","POST");
+        HttpsURLConnection conn=connection(endpoint,"POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type","application/vnd.android.package-archive");
         conn.setFixedLengthStreamingMode(file.length());
