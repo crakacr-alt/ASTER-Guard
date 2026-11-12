@@ -100,6 +100,35 @@ public final class DeviceSmokeTest {
             assertTrue(r.file.length()>0);
         }finally {resultFile.delete();}
     }
+    @Test public void editorCanImportCorrectAbiElfAndVerifySignedArchive() throws Exception {
+        // Fake payload exercises packaging and alignment only, NOT runtime ELF validity.
+        java.io.File so=new java.io.File(target().getCacheDir(),"test-arm64.so");
+        java.io.File output=new java.io.File(target().getCacheDir(),"test-native-output.apk");
+        byte[] elf=new byte[120];
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';
+        elf[4]=2;elf[5]=1;elf[18]=(byte)183;elf[19]=0;
+        try(java.io.OutputStream o=new java.io.FileOutputStream(so)){o.write(elf);}
+        try {
+            if(!ApkPatchSigner.exists("uitest"))ApkPatchSigner.createKey("uitest");
+            ApkPatchSigner.Plan plan=new ApkPatchSigner.Plan();
+            plan.mode=ApkPatchSigner.IMPORT_NATIVE_SO;
+            plan.replacementSo=so;
+            plan.replacementSoTarget="lib/arm64-v8a/libastertest.so";
+            String input=target().getPackageManager()
+                .getApplicationInfo(target().getPackageName(),0).sourceDir;
+            ApkPatchSigner.Result result=ApkPatchSigner.rebuildAndSign(
+                new java.io.File(input),output,"uitest",plan);
+            assertTrue("Resulting APK signature verified",result.verified);
+            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(result.file)){
+                java.util.zip.ZipEntry entry=zip.getEntry(plan.replacementSoTarget);
+                assertNotNull("Native library added under correct ABI",entry);
+                assertEquals(java.util.zip.ZipEntry.STORED,entry.getMethod());
+                try(java.io.InputStream stream=zip.getInputStream(entry)){
+                    assertEquals("arm64-v8a",NativeAbiInspector.inspect(stream).abi);
+                }
+            }
+        }finally{so.delete();output.delete();}
+    }
     @Test public void workshopUiOpensWithAppPrivateApk() throws Exception {
         // Do not open a user APK automatically. A private copy is required.
         android.content.pm.ApplicationInfo info=target().getPackageManager()
