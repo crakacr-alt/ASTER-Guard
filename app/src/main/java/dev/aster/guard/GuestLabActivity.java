@@ -136,17 +136,30 @@ public final class GuestLabActivity extends Activity {
         line("Гостевая Android 7+ · отдельная лаборатория",19,TEXT);
         line("Весь пульт управления расположен в ASTER. Сам Android Emulator с root работает на вашем отдельном ПК/сервере, "+
              "а НЕ внутри этого APK или основного телефона. Не запускайте подозрительный APK на основной ОС.",13,AMBER);
+        heading("Режим лаборатории");
+        body.addView(button("Локально на этом телефоне · без сервера",()->{
+            startActivity(new Intent(this,FileScanActivity.class));
+        }));
+        line("Локальный режим выполняет статическую проверку выбранных файлов, "+
+            "DEX-кода и трекеров без установки APK. Он работает без интернета, "+
+            "но НЕ создаёт гостевую Android-систему и НЕ запускает вирусы.",12,MUTED);
         if(lab==null){
-            heading("Защищённое подключение к лаборатории");
+            body.addView(button("Настроить собственный ПК / VPS · гайд и автоустановка",
+                this::serverSetupGuide));
+            heading("Подключиться к своему серверу с Android-гостем");
             line("Требуется HTTPS-адрес частного лабораторного моста, SHA-256 его сертификата и секретный токен. "+
                  "Проверьте отпечаток вручную. Не открывайте мост в публичный интернет.",12,MUTED);
-            serverInput=input("https://192.168.x.x:8742",server.isEmpty()?"https://127.0.0.1:8742":server,false);
+            serverInput=input("https://192.168.x.x:8742",server.isEmpty()?"":server,false);
             pinInput=input("SHA-256 сертификата · 64 символа",fingerprint,false);
             tokenInput=input("Токен сопряжения",token,true);
             body.addView(serverInput);body.addView(pinInput);body.addView(tokenInput);
             body.addView(button("Подключиться по HTTPS",this::pair));
-            line("Настройка лаборатории: в исходниках репозитория /lab/. Гостевой образ выбирается при "+
-                 "запуске Android Emulator на ПК: Android API 24+, x86 или x86_64, rootable AOSP.",12,MUTED);
+            line("Укажите частный IP вашего ПК/VPS, например https://192.168.1.100:8742 "+
+                 "или адрес Tailscale 100.x.x.x. Адрес 127.0.0.1 на телефоне "+
+                 "указывает на сам телефон, а НЕ на сервер.",12,AMBER);
+            line("На собственном Linux x86_64 ПК сервер можно подготовить скриптом "+
+                 "из репозитория ASTER. Нужен KVM; обычный VPS без nested virtualization "+
+                 "может не поддерживать Android Emulator.",12,MUTED);
             return;
         }
         line(busy?"Выполняется команда в отдельном потоке…":"Мост сопряжён · TLS-пин проверяется при каждом запросе",13,busy?AMBER:MINT);
@@ -306,6 +319,43 @@ public final class GuestLabActivity extends Activity {
             view.setTextIsSelectable(true);
             body.addView(view);
         }
+    }
+    private void serverSetupGuide(){
+        String instructions="УСТАНОВКА СВОЕЙ ЛАБОРАТОРИИ\\n\\n"+
+            "1. Требуется отдельный Linux x86_64 ПК или VPS с KVM, достаточно RAM и диска. "+
+            "Используйте только выделенную машину для потенциально опасных APK.\\n\\n"+
+            "2. В терминале Ubuntu/Debian: \\n"+
+            "git clone https://github.com/crakacr-alt/ASTER-Guard.git\\n"+
+            "cd ASTER-Guard\\n"+
+            "sudo bash lab/auto_setup_server.sh\\n\\n"+
+            "3. По умолчанию мост работает только на серверном 127.0.0.1. "+
+            "Для подключения телефона укажите приватный IP: \\n"+
+            "sudo bash lab/auto_setup_server.sh --bind 192.168.1.100\\n"+
+            "Для Tailscale используйте частный 100.x.x.x адрес, не публикуйте порт в интернете.\\n\\n"+
+            "4. Скрипт выдаст HTTPS-адрес, SHA-256 сертификата и токен. "+
+            "Перенесите три значения в форму ASTER. Токен держите в секрете.\\n\\n"+
+            "5. ВАЖНО: установочный скрипт НЕ подтверждает сетевую изоляцию вредоносного ПО. "+
+            "Перед динамическим анализом отдельно ограничьте исходящий трафик гостя "+
+            "на хосте, проверьте запрет и только затем разрешайте запуск.\\n\\n"+
+            "Управление сервисами:\\n"+
+            "sudo systemctl status aster-guest aster-bridge\\n"+
+            "sudo journalctl -u aster-guest -n 40 --no-pager\\n\\n"+
+            "Подробная инструкция: github.com/crakacr-alt/ASTER-Guard/blob/main/docs/HOST_AUTOINSTALL.md";
+        String message=instructions.replace("\\\\n","\\n");
+        TextView info=text(message,13,TEXT);
+        info.setTextIsSelectable(true);
+        ScrollView scroll=new ScrollView(this);scroll.addView(info);
+        new AlertDialog.Builder(this).setTitle("Локальный ПК / собственный сервер")
+            .setView(scroll)
+            .setNegativeButton("Закрыть",null)
+            .setPositiveButton("Скопировать команды",(dialog,which)->{
+                android.content.ClipboardManager cb=(android.content.ClipboardManager)
+                    getSystemService(CLIPBOARD_SERVICE);
+                if(cb!=null)cb.setPrimaryClip(android.content.ClipData.newPlainText(
+                    "ASTER Server", "git clone https://github.com/crakacr-alt/ASTER-Guard.git\\n"+
+                    "cd ASTER-Guard\\n"+
+                    "sudo bash lab/auto_setup_server.sh"));
+            }).show();
     }
     private void pair(){
         server=serverInput.getText().toString().trim();
