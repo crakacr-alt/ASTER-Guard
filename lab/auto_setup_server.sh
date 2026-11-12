@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Ubuntu/Debian Linux x86_64 only. No APK execution and no signing keys.
+if [[ "$#" -eq 1 && ( "$1" == --help || "$1" == -h ) ]];then
+ echo "Usage: sudo bash lab/auto_setup_server.sh [--bind PRIVATE_IPV4] [--api 24..35] [--abi x86|x86_64]"
+ exit 0
+fi
 if [[ "$(id -u)" != 0 ]];then echo "Run with sudo" >&2;exit 2;fi
 BIND=127.0.0.1; API=35; ABI=x86_64
 while (( $# > 0 ));do
