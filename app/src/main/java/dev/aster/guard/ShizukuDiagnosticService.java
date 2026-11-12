@@ -1,6 +1,7 @@
 package dev.aster.guard;
 
 import android.os.RemoteException;
+import android.os.ParcelFileDescriptor;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -98,6 +99,53 @@ public final class ShizukuDiagnosticService extends IExecService.Stub {
             return "Команда не выполнена: "+e.getClass().getSimpleName()+": "+e.getMessage();
         }finally{
             if(p!=null){p.destroy();}
+        }
+    }
+    /**
+     * Installs a bounded user-selected APK via the shell UID without giving the
+     * shell permission to read ASTER's private cache paths.
+     * The source FD is passed through AIDL; no arbitrary filesystem or command access.
+     */
+    @Override public String installApk(ParcelFileDescriptor content,long size,
+                                         boolean bypassLowTarget,boolean testOnly)throws RemoteException{
+        if(content==null||size<4||size>96L*1024*1024)
+            throw new SecurityException("APK должен быть от 4 байт до 96 МиБ");
+        java.util.ArrayList<String> args=new java.util.ArrayList<>();
+        args.add("pm");args.add("install");args.add("-r");
+        if(bypassLowTarget)args.add("--bypass-low-target-sdk-block");
+        if(testOnly)args.add("-t");
+        args.add("-S");args.add(Long.toString(size));args.add("-");
+        Process process=null;
+        try(ParcelFileDescriptor.AutoCloseInputStream in =
+                new ParcelFileDescriptor.AutoCloseInputStream(content)){
+            process=new ProcessBuilder(args).redirectErrorStream(true).start();
+            byte[] buffer=new byte[32768];
+            long remaining=size;
+            try(java.io.OutputStream out=process.getOutputStream()){
+                while(remaining>0){
+                    int len=in.read(buffer,0,(int)Math.min(buffer.length,remaining));
+                    if(len<0)throw new java.io.IOException("Источник APK обрезан");
+                    out.write(buffer,0,len);
+                    remaining-=len;
+                }
+            }
+            if(!process.waitFor(70,TimeUnit.SECONDS)){
+                process.destroy();
+                return "INSTALL_TIMEOUT: установка превысила 70 секунд.";
+            }
+            ByteArrayOutputStream result=new ByteArrayOutputStream();
+            try(InputStream output=process.getInputStream()){
+                int n;
+                while((n=output.read(buffer))>0&&result.size()<16000)
+                    result.write(buffer,0,Math.min(n,16000-result.size()));
+            }
+            String text=result.toString("UTF-8").trim();
+            return "Exit "+process.exitValue()+": "+(text.isEmpty()?"Нет вывода":text);
+        }catch(Exception error){
+            if(process!=null)process.destroy();
+            return "INSTALL_ERROR: "+error.getClass().getSimpleName()+": "+error.getMessage();
+        }finally{
+            if(process!=null)process.destroy();
         }
     }
     @Override public void destroy(){System.exit(0);}

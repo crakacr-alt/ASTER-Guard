@@ -6,6 +6,8 @@ import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.content.pm.ApplicationInfo;
 import android.os.IBinder;
+import android.os.ParcelFileDescriptor;
+import java.io.File;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -65,7 +67,7 @@ public final class ShizukuBridge {
         };
         Shizuku.UserServiceArgs args=new Shizuku.UserServiceArgs(
             new ComponentName(context.getPackageName(),ShizukuDiagnosticService.class.getName()))
-            .daemon(false).version(3).processNameSuffix("inspector");
+            .daemon(false).version(4).processNameSuffix("inspector");
         Shizuku.bindUserService(args,conn);
         try{
             if(!ready.await(9,TimeUnit.SECONDS)||ref.get()==null)
@@ -73,6 +75,38 @@ public final class ShizukuBridge {
             return ref.get().setPrivacyOp(pkg,op,deny);
         }finally{
             try{Shizuku.unbindUserService(args,conn,true);}catch(Throwable ignored){}
+        }
+    }
+    public static String installSelectedApk(Context context, File file,
+                                             boolean bypassLowTarget,boolean testOnly)throws Exception{
+        if(!authorized())throw new SecurityException("Shizuku не разрешён");
+        if(file==null||!file.isFile()||file.length()<4||file.length()>96L*1024*1024)
+            throw new IllegalArgumentException("Установка ограничена APK до 96 МиБ");
+        File canonical=file.getCanonicalFile();
+        if(!canonical.getParentFile().equals(context.getCacheDir().getCanonicalFile()) ||
+            !canonical.getName().endsWith(".apk"))
+            throw new SecurityException("Выбирать APK можно только из временного приватного кэша ASTER");
+        CountDownLatch ready=new CountDownLatch(1);
+        AtomicReference<IExecService> remote=new AtomicReference<>();
+        ServiceConnection connection=new ServiceConnection(){
+            @Override public void onServiceConnected(ComponentName n,IBinder binder){
+                remote.set(IExecService.Stub.asInterface(binder));ready.countDown();
+            }
+            @Override public void onServiceDisconnected(ComponentName n){ready.countDown();}
+        };
+        Shizuku.UserServiceArgs args=new Shizuku.UserServiceArgs(
+            new ComponentName(context.getPackageName(),ShizukuDiagnosticService.class.getName()))
+            .daemon(false).version(4).processNameSuffix("inspector");
+        Shizuku.bindUserService(args,connection);
+        try{
+            if(!ready.await(10,TimeUnit.SECONDS)||remote.get()==null)
+                throw new IllegalStateException("Не удалось запустить службу Shizuku");
+            try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(
+                canonical,ParcelFileDescriptor.MODE_READ_ONLY)){
+                return remote.get().installApk(fd,canonical.length(),bypassLowTarget,testOnly);
+            }
+        }finally{
+            try{Shizuku.unbindUserService(args,connection,true);}catch(Throwable ignored){}
         }
     }
     private static void validate(Context c,String pkg,boolean mutating)throws Exception{
@@ -99,7 +133,7 @@ public final class ShizukuBridge {
         };
         Shizuku.UserServiceArgs args=new Shizuku.UserServiceArgs(
             new ComponentName(context.getPackageName(),ShizukuDiagnosticService.class.getName()))
-            .daemon(false).version(2).processNameSuffix("inspector");
+            .daemon(false).version(4).processNameSuffix("inspector");
         Shizuku.bindUserService(args,connection);
         try{
             if(!ready.await(9,TimeUnit.SECONDS)||ref.get()==null)
