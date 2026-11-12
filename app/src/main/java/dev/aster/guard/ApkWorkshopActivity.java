@@ -217,8 +217,8 @@ public final class ApkWorkshopActivity extends Activity {
                 "Пересборка не гарантирует запуск на несовместимой версии Android.")
             .setNegativeButton("Отмена",null)
             .setPositiveButton("Пересобрать",(d,w)->task("APK Editor",()->{
-                File target=new File(getCacheDir(),"aster-patched-"+System.nanoTime()+".apk");
-                ApkPatchSigner.Result result=ApkPatchSigner.rebuildAndSign(original,target,key,plan);
+                File signedOutput=new File(getCacheDir(),"aster-patched-"+System.nanoTime()+".apk");
+                ApkPatchSigner.Result result=ApkPatchSigner.rebuildAndSign(original,signedOutput,key,plan);
                 signed=result.file;
                 return "Подпись проверена: "+result.verified+
                     "\nSHA-256: "+result.hash+
