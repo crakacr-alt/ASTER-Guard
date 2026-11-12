@@ -123,6 +123,16 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(result["restored"])
         self.assertIn("Not all actions", result["coverage_warning"])
 
+    def test_network_endpoints_decode_guest_table_without_app_attribution(self):
+        sample = (
+            "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+            "   0: 0100007F:1F90 08080808:01BB 01 00000000:00000000 00:00000000 00000000  0 0 0\n"
+            "   1: 0100007F:0000 00000000:0000 0A 00000000:00000000 00:00000000 00000000  0 0 0\n"
+        )
+        connections=sandbox.parse_remote_endpoints(sample,"tcp")
+        self.assertEqual(["tcp://8.8.8.8:443"], connections)
+        self.assertEqual([], sandbox.parse_remote_endpoints(sample,"not-a-table"))
+
     def test_duration_allowlist_and_bounds(self):
         self.assertEqual((15, 30, 60, 120), sandbox.ALLOWED_SECONDS)
         self.assertLessEqual(sandbox.MAX_FILES, 500)
