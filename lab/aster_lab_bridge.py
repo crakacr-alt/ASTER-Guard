@@ -78,6 +78,15 @@ class Lab:
         self.forward_port: int | None = None
         self.debug_target = ""
         self.ndk_home = os.environ.get("ANDROID_NDK_HOME", "")
+        # The operator must verify a real host firewall / isolated namespace.
+        # This environmental assertion is NOT a technical isolation proof.
+        self.host_egress_attested = (
+            os.environ.get("ASTER_LAB_EGRESS_ISOLATED") ==
+            "YES_I_VERIFIED_HOST_FIREWALL"
+        )
+        self.sandbox: dict = {"status": "idle"}
+        self.sandbox_cancel = threading.Event()
+        self.sandbox_worker: threading.Thread | None = None
         self.net_state = "unverified"  # Never imply a reliable VM network kill switch.
         self.trace_proc: subprocess.Popen | None = None
         self.trace_lines: list[str] = []
@@ -93,7 +102,7 @@ class Lab:
                 Path(meta["path"]).unlink(missing_ok=True)
                 del self.artifacts[artifact_id]
         # Orphaned dumps from bridge crash are never presented for retrieval.
-        for pattern in ("*.hprof", "*.so"):
+        for pattern in ("*.hprof", "*.so", "aster_sandbox_*.apk", "aster_report_*.json", "aster_report_*.html"):
             for path in self.artifacts_dir.glob(pattern):
                 try:
                     if force or now - path.stat().st_mtime > 45*60:
@@ -129,6 +138,8 @@ class Lab:
             "network_isolation": self.net_state,
             "network_warning": "Soft Android toggles are NOT a verified host firewall. "
                                "Untrusted malware requires host-verified offline isolation.",
+            "sandbox": self.sandbox_status(),
+            "host_egress_attested": self.host_egress_attested,
             "debugger_attached": self.jdb is not None and self.jdb.poll() is None,
             "trace_running": self.trace_proc is not None and self.trace_proc.poll() is None,
             "features": ["logcat", "process snapshot", "native backtrace",
@@ -488,6 +499,288 @@ class Lab:
                  " · errors:"+str(len(response["failures"])))
         return response
 
+
+    # === ASTER Sandbox Analyzer: bounded, one active guest session ===
+
+    def sandbox_stage(self, blob: bytes) -> dict:
+        """Stage an explicitly selected APK. NEVER install here."""
+        if self.sandbox.get("status") in ("queued", "running", "restoring"):
+            raise ValueError("Analysis already active; wait for restore")
+        if len(blob) < 4 or len(blob) > MAX_UPLOAD or blob[:4] != b"PK\x03\x04":
+            raise ValueError("Choose a valid APK ZIP, maximum 96 MiB")
+        identifier = uuid.uuid4().hex
+        path = self.artifacts_dir / ("aster_sandbox_" + identifier + ".apk")
+        path.write_bytes(blob)
+        path.chmod(0o600)
+        digest = hashlib.sha256(blob).hexdigest()
+        self.artifacts[identifier] = {
+            "path": str(path), "size": len(blob), "sha256": digest,
+            "name": "selected.apk", "created": time.time(), "kind": "staged_apk",
+        }
+        self.log("sandbox_apk_staged", f"{identifier[:8]} {len(blob)} bytes")
+        return {
+            "artifact_id": identifier, "size": len(blob), "sha256": digest,
+            "installed": False, "executed": False,
+            "note": "APK staged privately. Installation and execution require a separate explicit command.",
+        }
+
+    def sandbox_status(self) -> dict:
+        state = self.sandbox
+        return {
+            "session_id": state.get("session_id", ""),
+            "status": state.get("status", "idle"),
+            "phase": state.get("phase", ""),
+            "package": state.get("package", ""),
+            "percent": state.get("percent", 0),
+            "summary": state.get("summary", {}),
+            "report_json_artifact": state.get("report_json_artifact", ""),
+            "report_html_artifact": state.get("report_html_artifact", ""),
+            "errors": state.get("errors", [])[-5:],
+            "events": state.get("timeline", [])[-25:],
+            "host_egress_attested": self.host_egress_attested,
+            "safety_warning": "The host egress declaration is operator-provided, not verified by ASTER. "
+                              "Root emulator snapshots and logcat do not prove full malware containment.",
+        }
+
+    def sandbox_begin(self, payload: dict) -> dict:
+        """Asynchronously run snapshot → install → observe → diff → restore."""
+        from sandbox_analyzer import ALLOWED_SECONDS
+        aid = payload.get("artifact_id", "")
+        seconds = payload.get("duration_seconds", 30)
+        consent = payload.get("acknowledge_lab_risk") is True
+        if not isinstance(aid, str) or not re.fullmatch("[0-9a-f]{32}", aid):
+            raise ValueError("Invalid staged APK artifact")
+        if type(seconds) is not int or seconds not in ALLOWED_SECONDS:
+            raise ValueError("Duration must be 15, 30, 60 or 120 seconds")
+        meta = self.artifacts.get(aid)
+        if not meta or meta.get("kind") != "staged_apk":
+            raise ValueError("Stage a fresh selected APK first")
+        if self.sandbox.get("status") in ("queued", "running", "restoring"):
+            raise ValueError("A guest sandbox analysis is already running")
+        if not self.host_egress_attested:
+            raise PermissionError("Sandbox execution BLOCKED: the lab host has not attested "
+                                  "to verified external network egress isolation. Set "
+                                  "ASTER_LAB_EGRESS_ISOLATED=YES_I_VERIFIED_HOST_FIREWALL "
+                                  "ONLY after configuring and verifying host firewall/namespace.")
+        if not consent:
+            raise PermissionError("Explicit confirmation of guest execution and host risk required")
+        self.root_required()
+        # Clean starting state required, rather than silently replacing an installed app.
+        session_id = uuid.uuid4().hex
+        self.sandbox_cancel = threading.Event()
+        self.sandbox = {
+            "session_id": session_id, "status": "queued",
+            "phase": "waiting", "percent": 0, "errors": [],
+            "timeline": [], "package": "", "duration_seconds": seconds,
+            "artifact_id": aid,
+        }
+        self.sandbox_worker = threading.Thread(
+            target=self._sandbox_execute,
+            args=(session_id, str(meta["path"]), str(meta["sha256"]), seconds,
+                  self.sandbox_cancel),
+            name="aster-sandbox-" + session_id[:6], daemon=True
+        )
+        self.sandbox_worker.start()
+        self.log("sandbox_started", session_id[:12])
+        return self.sandbox_status()
+
+    def sandbox_cancel_run(self) -> dict:
+        if self.sandbox.get("status") not in ("queued", "running", "restoring"):
+            return self.sandbox_status()
+        self.sandbox_cancel.set()
+        self.log("sandbox_cancel_requested", self.sandbox.get("session_id", "")[:12])
+        return self.sandbox_status()
+
+    def _sandbox_execute(self, session_id: str, apk: str, apk_sha: str,
+                         seconds: int, cancelled: threading.Event):
+        from sandbox_analyzer import snapshot, diff, report_json, report_html, summary, utc
+        checkpoint = "aster_" + session_id[:18]
+        report = {
+            "format": "aster-sandbox-v1",
+            "session_id": session_id, "started_at": utc(),
+            "apk_sha256": apk_sha, "duration_requested_seconds": seconds,
+            "status": "running", "package": "", "timeline": [],
+            "errors": [], "limitations": [
+                "Only selected guest snapshot metadata, selected package files, AppOps, "
+                "permissions, process names, and limited logcat are observed.",
+                "This is NOT exhaustive syscall / filesystem / memory / HTTPS inspection.",
+                "Guest networking and hypervisor safety depend on external host isolation; "
+                "an operator attestation cannot be verified by this application.",
+                "File names, sizes and modification timestamps are compared; these are "
+                "not complete file-content hashes.",
+            ],
+            "isolation": "host firewall declared verified by lab operator; NOT automatically verified",
+            "restore": {"attempted": False, "verified": False},
+        }
+        checkpoint_saved = False
+        baseline_packages: set[str] = set()
+        target = ""
+        def event(phase: str, detail: str, percent: int):
+            report["timeline"].append({"time": utc(), "phase": phase,
+                                      "detail": str(detail)[:300]})
+            del report["timeline"][:-1500]
+            with LOCK:
+                if self.sandbox.get("session_id") == session_id:
+                    self.sandbox.update({"status": "running", "phase": phase,
+                                         "percent": percent,
+                                         "timeline": report["timeline"][-30:],
+                                         "package": target})
+        def fail_if_cancelled():
+            if cancelled.is_set():
+                raise InterruptedError("Analysis cancelled by user; restoring clean checkpoint")
+        try:
+            self.root_required()
+            event("checkpoint", "Saving clean emulator snapshot BEFORE installation", 5)
+            raw = self.adb("emu", "avd", "snapshot", "save", checkpoint,
+                           timeout=110, limit=2000)
+            if "KO:" in raw or "error" in raw.lower():
+                raise RuntimeError("Guest snapshot save was rejected: " + raw[:500])
+            # Stronger check: emulator must list the named checkpoint.
+            listing = self.adb("emu", "avd", "snapshot", "list", timeout=35, limit=8000)
+            if checkpoint not in listing:
+                raise RuntimeError("Guest snapshot was not confirmed by emulator; "
+                                   "aborting before APK installation")
+            checkpoint_saved = True
+            fail_if_cancelled()
+            event("pre_install", "Collecting package and system baseline", 13)
+            report["pre_install"] = snapshot(self)
+            baseline_packages = set(report["pre_install"]["third_party_packages"])
+            fail_if_cancelled()
+            event("install", "Installing selected APK ONLY into disposable guest", 25)
+            result = self.adb("install", apk, timeout=95, limit=3000)
+            if "Success" not in result:
+                raise RuntimeError("Guest APK install failed: " + result[:800])
+            report["install"] = {"installed": True, "output": result[:1200]}
+            installed = set(self.packages()) - baseline_packages
+            if len(installed) != 1:
+                raise RuntimeError("Expected precisely one newly installed user package; "
+                                   "observed " + str(len(installed)) +
+                                   ". An upgrade/ambiguous install will NOT be executed.")
+            target = next(iter(installed))
+            report["package"] = target
+            event("post_install", "New package " + target + " installed", 36)
+            report["post_install"] = snapshot(self, target)
+            report["install_delta"] = diff(report["pre_install"], report["post_install"])
+            fail_if_cancelled()
+            # Optional soft guest radios. NOT security isolation; host firewall is mandatory.
+            self.adb("shell", "svc", "wifi", "disable", timeout=8)
+            self.adb("shell", "svc", "data", "disable", timeout=8)
+            event("launch", "Launching " + target + " for controlled observation", 43)
+            start_output = self.adb(
+                "shell", "monkey", "-p", target, "-c",
+                "android.intent.category.LAUNCHER", "1",
+                timeout=25, limit=3200)
+            report["launch_output"] = start_output[:1500]
+            pid_history: list[dict] = []
+            # Capture multiple moments rather than pretend endpoint sampling is complete.
+            for second in range(seconds):
+                fail_if_cancelled()
+                if second % 5 == 0 or second == seconds - 1:
+                    pid = self.pid(target)
+                    pid_history.append({"elapsed_seconds": second, "pid": pid})
+                    event("observe", f"t={second}s · selected PID: {pid}", 45 + int(35 * second/seconds))
+                cancelled.wait(1)
+            report["pid_samples"] = pid_history
+            final_pid = self.pid(target)
+            if final_pid:
+                lines, ok = ("", False)
+                try:
+                    lines = self.adb(
+                        "shell", "logcat", "-d", "-t", "1200", "-v",
+                        "threadtime", "--pid", str(final_pid), timeout=22, limit=85000)
+                    ok = True
+                except Exception as exc:
+                    report["limitations"].append("PID logcat unavailable: " + str(exc)[:150])
+                report["logcat_excerpt"] = lines[:85000] if ok else ""
+            else:
+                report["logcat_excerpt"] = ""
+                report["limitations"].append("Process already exited before logcat snapshot")
+            event("post_run", "Collecting package files, AppOps, processes and settings", 84)
+            report["post_run"] = snapshot(self, target)
+            report["comparison"] = diff(report["post_install"], report["post_run"])
+            report["overall_delta"] = diff(report["pre_install"], report["post_run"])
+            report["status"] = "completed"
+        except InterruptedError as exc:
+            report["status"] = "cancelled"
+            report["errors"].append(str(exc))
+        except Exception as exc:
+            report["status"] = "failed"
+            report["errors"].append(type(exc).__name__ + ": " + str(exc)[:450])
+        finally:
+            # Always attempt to terminate guest process before reverting checkpoint.
+            if target:
+                try:
+                    self.adb("shell", "am", "force-stop", target, timeout=10)
+                except Exception as exc:
+                    report["errors"].append("force-stop: " + type(exc).__name__)
+            if checkpoint_saved:
+                with LOCK:
+                    if self.sandbox.get("session_id") == session_id:
+                        self.sandbox.update({"status": "restoring", "phase": "restore",
+                                             "percent": 92})
+                report["restore"]["attempted"] = True
+                try:
+                    result = self.adb("emu", "avd", "snapshot", "load", checkpoint,
+                                      timeout=110, limit=1500)
+                    if "KO:" in result or "error" in result.lower():
+                        raise RuntimeError(result[:500])
+                    self.adb("wait-for-device", timeout=70)
+                    self.root_required()
+                    after_restore = set(self.packages())
+                    restored = after_restore == baseline_packages
+                    report["restore"]["verified"] = restored
+                    if not restored:
+                        report["errors"].append(
+                            "Post-restore package inventory differs from pre-install baseline")
+                    else:
+                        try:
+                            self.adb("emu", "avd", "snapshot", "delete", checkpoint,
+                                     timeout=35, limit=1000)
+                        except Exception:
+                            report["limitations"].append("Checkpoint deletion failed")
+                except Exception as exc:
+                    report["errors"].append("Snapshot restore failed: " + str(exc)[:400])
+            else:
+                # No APK was installed unless the checkpoint was confirmed saved.
+                report["restore"]["reason"] = "no checkpoint created; install never attempted"
+            if report["status"] == "completed" and not report["restore"]["verified"]:
+                report["status"] = "completed_restore_unverified"
+            report["finished_at"] = utc()
+            event("finalize", "Writing JSON/HTML report and restore status", 97)
+            # Keep evidence bounded and private, not in GitHub or public endpoints.
+            try:
+                for kind, extension, contents in (
+                    ("sandbox_json", ".json", report_json(report)),
+                    ("sandbox_html", ".html", report_html(report)),
+                ):
+                    if len(contents) > 2 * 1024 * 1024:
+                        raise ValueError("Report larger than 2 MiB; audit details too large")
+                    artifact_id = uuid.uuid4().hex
+                    output = self.artifacts_dir / ("aster_report_" + artifact_id + extension)
+                    output.write_bytes(contents)
+                    output.chmod(0o600)
+                    digest = hashlib.sha256(contents).hexdigest()
+                    with LOCK:
+                        self.artifacts[artifact_id] = {
+                            "path": str(output), "name": "ASTER-sandbox-report" + extension,
+                            "size": len(contents), "sha256": digest,
+                            "kind": kind, "created": time.time(),
+                        }
+                    report[kind + "_artifact"] = artifact_id
+            except Exception as exc:
+                report["errors"].append("Report storage failed: " + str(exc)[:120])
+            with LOCK:
+                if self.sandbox.get("session_id") == session_id:
+                    self.sandbox.update({
+                        "status": report["status"], "phase": "finished", "percent": 100,
+                        "summary": summary(report), "errors": report["errors"],
+                        "report_json_artifact": report.get("sandbox_json_artifact", ""),
+                        "report_html_artifact": report.get("sandbox_html_artifact", ""),
+                        "timeline": report["timeline"][-30:],
+                        "package": target,
+                    })
+            self.log("sandbox_finished", session_id[:10] + " " + report["status"])
+
     def upload_apk(self, blob: bytes) -> dict:
         self.root_required()
         if len(blob) < 4 or len(blob) > MAX_UPLOAD:
@@ -558,6 +851,8 @@ class Handler(BaseHTTPRequestHandler):
         def run_get():
             lab = self.server.lab  # type: ignore[attr-defined]
             path = urlparse(self.path).path
+            if path == "/v1/sandbox/status":
+                return self._json(200, lab.sandbox_status())
             if path == "/v1/native/status":
                 return self._json(200, lab.native_status())
             if path == "/v1/status":
@@ -592,7 +887,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(size))
                 name=meta.get("name","aster-heap.hprof")
-                if not re.fullmatch(r"(?:lib[A-Za-z0-9_]{1,48}\.so|aster-heap\.hprof|[a-zA-Z0-9_.-]{1,140}\.hprof)",name):
+                if not re.fullmatch(r"(?:lib[A-Za-z0-9_]{1,48}\.so|aster-heap\.hprof|[a-zA-Z0-9_.-]{1,140}\.hprof|ASTER-sandbox-report\.(?:json|html))",name):
                     name="aster-artifact.bin"
                 self.send_header("Content-Disposition", 'attachment; filename="'+name+'"')
                 self.send_header("Cache-Control", "no-store")
@@ -608,6 +903,9 @@ class Handler(BaseHTTPRequestHandler):
         def run_post():
             lab = self.server.lab  # type: ignore[attr-defined]
             path = urlparse(self.path).path
+            if path == "/v1/sandbox/stage":
+                blob = self._read(MAX_UPLOAD)
+                return self._json(200, lab.sandbox_stage(blob))
             if path == "/v1/upload":
                 blob = self._read(MAX_UPLOAD)
                 return self._json(200, lab.upload_apk(blob))
@@ -617,6 +915,10 @@ class Handler(BaseHTTPRequestHandler):
             obj = json.loads(self._read(request_cap))
             if not isinstance(obj, dict):
                 raise ValueError("Expected JSON object")
+            if path == "/v1/sandbox/begin":
+                return self._json(200, lab.sandbox_begin(obj))
+            if path == "/v1/sandbox/cancel":
+                return self._json(200, lab.sandbox_cancel_run())
             if path == "/v1/native/build":
                 return self._json(200, lab.native_build(obj))
             if path == "/v1/select":
@@ -697,10 +999,14 @@ def main():
         server.serve_forever(poll_interval=0.3)
     finally:
         stop_cleaner.set()
+        lab.sandbox_cancel.set()
+        if lab.sandbox_worker is not None:
+            lab.sandbox_worker.join(timeout=150)
         with LOCK:
             lab.detach_debugger()
             lab.trace_stop()
-            lab.cleanup_artifacts(force=True)
+            if not (lab.sandbox_worker is not None and lab.sandbox_worker.is_alive()):
+                lab.cleanup_artifacts(force=True)
         server.server_close()
 
 
