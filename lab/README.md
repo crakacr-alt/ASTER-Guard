@@ -41,3 +41,20 @@ dedicated non-root user. The command-line interface runs only one C/C++
 translation unit per target ABI, with no arbitrary build scripts or shell
 arguments. See [docs/NATIVE_BUILDER.md](../docs/NATIVE_BUILDER.md) for setup,
 Android UI usage, architecture options, .so export and limitations.
+
+
+## Automated Sandbox Analyzer (v0.10.0)
+
+ASTER's Android Lab UI can stage an APK (without installing), trigger a short
+guest-only experiment, show progress, cancel, compare observations, and export
+private HTML/JSON reports. The bridge requires a rootable guest with support
+for named AVD snapshots. It refuses to install if the checkpoint cannot be
+confirmed. Use the repository's updated lab/start_guest.sh launcher.
+
+CRITICAL: Independently configure and test a host-side egress firewall or
+isolated namespace BEFORE launching unknown APKs. Only AFTER verification
+export ASTER_LAB_EGRESS_ISOLATED=YES_I_VERIFIED_HOST_FIREWALL in the environment
+of the Python lab bridge. This is only an operator assertion, not a firewall.
+Guest Wi-Fi/data toggles do not provide network containment.
+
+Details: docs/SANDBOX_ANALYZER.md.

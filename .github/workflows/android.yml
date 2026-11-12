@@ -125,7 +125,7 @@ jobs:
         with:
           name: ASTER-Guard-debug-apk
           path: release-files
-      - name: Publish v0.9.0 standard GitHub release (debug-key APK)
+      - name: Publish v0.10.0 standard GitHub release (debug-key APK)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -137,25 +137,25 @@ jobs:
             echo "Skipping stale CI APK: main is $ACTUAL_HEAD, this run is $GITHUB_SHA"
             exit 0
           fi
-          TAG="v0.9.0"
-          APK="release-files/ASTER-Guard-v0.9.0-debug.apk"
+          TAG="v0.10.0"
+          APK="release-files/ASTER-Guard-v0.10.0-debug.apk"
           mv release-files/app-debug.apk "$APK"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already published; not replacing an existing versioned APK."
             exit 0
           fi
           cat > release-notes.md <<'EOF'
-          # ASTER Guard 0.9.0 · Test build
+          # ASTER Guard 0.10.0 · Test build
 
           **Direct Android APK** is attached below. Minimum Android 7.0 (API 24); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
 
-          **NEW Android NDK build laboratory:** ASTER's Android Lab now accepts a user-selected .c/.cpp source (max 64 KiB), builds ARM32/ARM64/x86/x86_64 .so using a paired lab workstation's Android NDK with fixed flags in a network-isolated bubblewrap sandbox, requires prlimit resource caps, returns diagnostics/ABI/hash and allows .so to be saved on the phone for import into APK Editor. No full emulator inside phone; no compiled-binary ABI translation, arbitrary Make/CMake execution or NDK compiler on the primary phone. **Existing APK Editor + Shizuku installer:** own user-created RSA AndroidKeyStore keys, signed APK rebuilding with ARSCLib and apksig, bounded assets privacy JSON changes, min/target SDK manifest editing, native ELF 32/64 ABI inspection and import of precompiled compatible .so, 16KiB ZIP page-alignment and installation via user-authorized Shizuku (including optional low-target SDK bypass). Not a native 32-to-64 compiler and does not guarantee installation. **Previously included in-app privacy and emulator lab controls:** DEX callsite references to ad/analytics SDKs, device IDs and sensitive APIs, opt-in Shizuku AppOps restrictions, and a separate Android guest controller UI with HTTPS certificate pinning, authenticated bridge, APK upload to guest, PID logcat/proc snapshots, JDWP Java debugger for debuggable guest apps, and HPROF memory dump export. **Actual rooted x86/x86_64 Android Emulator runs on a separate authorized lab machine, NOT inside the phone**. Includes prior file scanner, DEX/Smali, Shizuku and PCAP tools.
+          **NEW ASTER Sandbox Analyzer:** staged APK → verified clean AVD checkpoint → bounded root baseline → guest install → selected app launch and timed PID observation → file, packages, settings, AppOps, process and guest-network before/after comparisons → attempt checkpoint restore → private JSON/HTML report. Includes UI progress, cancellation and export. The full emulator still runs on an EXTERNAL dedicated host, not on the phone. Host network containment must be configured externally; the bridge only requires manual operator attestation and does NOT verify isolation. Full syscalls/packet capture and guaranteed malware containment are NOT implemented. **Earlier Android NDK build laboratory:** ASTER's Android Lab now accepts a user-selected .c/.cpp source (max 64 KiB), builds ARM32/ARM64/x86/x86_64 .so using a paired lab workstation's Android NDK with fixed flags in a network-isolated bubblewrap sandbox, requires prlimit resource caps, returns diagnostics/ABI/hash and allows .so to be saved on the phone for import into APK Editor. No full emulator inside phone; no compiled-binary ABI translation, arbitrary Make/CMake execution or NDK compiler on the primary phone. **Existing APK Editor + Shizuku installer:** own user-created RSA AndroidKeyStore keys, signed APK rebuilding with ARSCLib and apksig, bounded assets privacy JSON changes, min/target SDK manifest editing, native ELF 32/64 ABI inspection and import of precompiled compatible .so, 16KiB ZIP page-alignment and installation via user-authorized Shizuku (including optional low-target SDK bypass). Not a native 32-to-64 compiler and does not guarantee installation. **Previously included in-app privacy and emulator lab controls:** DEX callsite references to ad/analytics SDKs, device IDs and sensitive APIs, opt-in Shizuku AppOps restrictions, and a separate Android guest controller UI with HTTPS certificate pinning, authenticated bridge, APK upload to guest, PID logcat/proc snapshots, JDWP Java debugger for debuggable guest apps, and HPROF memory dump export. **Actual rooted x86/x86_64 Android Emulator runs on a separate authorized lab machine, NOT inside the phone**. Includes prior file scanner, DEX/Smali, Shizuku and PCAP tools.
 
-          **This is a normal GitHub Release page, but NOT a production-signed build.** Ephemeral CI debug key: upgrades may require reinstall. External guest is not on-device. Guest root does not guarantee debugger support for all nondebuggable apps; HPROF may fail. Guest radio toggles are not reliable malware network quarantine. No 32-to-64 machine-code conversion, original developer signature cloning, native LLDB, exhaustive syscall tracing, production signing key, physical-device tests or independently validated malware detection. Full external NDK+bubblewrap compile on a dedicated real lab host has NOT been physically tested by Android CI.
+          **This is a normal GitHub Release page, but NOT a production-signed build.** Ephemeral CI debug key: upgrades may require reinstall. External guest is not on-device. Guest root does not guarantee debugger support for all nondebuggable apps; HPROF may fail. Guest radio toggles are not reliable malware network quarantine. No native ELF 32-to-64 conversion, original signing-key cloning, full syscall capture, verified host firewall setup, root guest running inside phone, production signing key, physical-device tests or independently validated malware detection. Full external NDK+bubblewrap compile on a dedicated real lab host has NOT been physically tested by Android CI.
 
           This APK remains a **CI debug build** with an ephemeral key. The maintainer requested NO production signing-key setup. Reinstallation may be needed between builds. GitHub Actions runs host tests, Android lint and Android 10/15 emulator smoke checks before publishing.
 
           Source: https://github.com/crakacr-alt/ASTER-Guard
           EOF
-          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.9.0 · Android APK (debug signing)" --notes-file release-notes.md --latest
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.10.0 · Android APK (debug signing)" --notes-file release-notes.md --latest
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG"

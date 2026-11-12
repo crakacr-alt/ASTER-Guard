@@ -48,3 +48,22 @@ Guest bridge additionally supports a bounded in-memory PID-scoped live logcat st
   compiled 32-bit ARM native code into 64-bit binary code.
 - Neither Android device privileges nor APK permanent signing key
   is used by the compiler. User-owned app patch keys remain separate.
+
+
+## v0.10.0 bounded automatic guest sandbox
+
+- Staging selected APK is not installation or execution; running needs a
+  separate user confirmation and a fixed duration.
+- The bridge blocks automatic execution unless host operator explicitly sets
+  ASTER_LAB_EGRESS_ISOLATED=YES_I_VERIFIED_HOST_FIREWALL. That setting is
+  only a declaration, not an automatically verified network firewall.
+- A named clean AVD checkpoint must be saved and listed before APK install.
+  Restore is attempted after completion, cancellation or failure; package
+  list equality is not a full disk/RAM integrity verification.
+- Reports include bounded app file metadata, package IDs, permission/AppOps,
+  process samples and passive guest-wide network data. No full syscall trace,
+  raw PCAP, active HTTPS MITM or complete malware detection.
+- Temporary staged APKs and sensitive reports expire. HTML is offline,
+  escaped and script-free. Test reports are not uploaded to GitHub.
+- Android tests check compilation/UI; full host sandbox containment, real
+  malicious samples and snapshot restore still need controlled validation.
