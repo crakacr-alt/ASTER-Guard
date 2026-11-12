@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: aster-android-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify-and-build:
     name: Unit tests · Lint · Debug APK
@@ -122,22 +125,27 @@ jobs:
         with:
           name: ASTER-Guard-debug-apk
           path: release-files
-      - name: Publish v0.8.0 standard GitHub release (debug-key APK)
+      - name: Publish v0.8.1 standard GitHub release (debug-key APK)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.8.0"
-          APK="release-files/ASTER-Guard-v0.8.0-debug.apk"
+          ACTUAL_HEAD="$(gh api "repos/$GH_REPO/commits/main" --jq '.sha')"
+          if [[ "$ACTUAL_HEAD" != "$GITHUB_SHA" ]]; then
+            echo "Skipping stale CI APK: main is $ACTUAL_HEAD, this run is $GITHUB_SHA"
+            exit 0
+          fi
+          TAG="v0.8.1"
+          APK="release-files/ASTER-Guard-v0.8.1-debug.apk"
           mv release-files/app-debug.apk "$APK"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already published; not replacing an existing versioned APK."
             exit 0
           fi
           cat > release-notes.md <<'EOF'
-          # ASTER Guard 0.8.0 · Test build
+          # ASTER Guard 0.8.1 · Test build
 
           **Direct Android APK** is attached below. Minimum Android 7.0 (API 24); pure Java/Dex app, no native libraries, usable on 32-bit ARMv7 and 64-bit ARM64.
 
@@ -149,5 +157,5 @@ jobs:
 
           Source: https://github.com/crakacr-alt/ASTER-Guard
           EOF
-          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.8.0 · Android APK (debug signing)" --notes-file release-notes.md --latest
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "ASTER Guard 0.8.1 · Android APK (debug signing)" --notes-file release-notes.md --latest
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG"
