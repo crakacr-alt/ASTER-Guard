@@ -112,7 +112,9 @@ class NativeBuilderTests(unittest.TestCase):
                 built.append(abi)
                 return ["/usr/bin/bwrap","--","test"]
             with mock.patch.object(builder,"ndk_status",return_value={
-                "ndk_configured":True,"bubblewrap_available":True}), \
+                "ndk_configured":True,"bubblewrap_available":True,
+                "prlimit_available":True}), \
+                 mock.patch.object(builder.shutil,"which",return_value="/usr/bin/prlimit"), \
                  mock.patch.object(builder,"sandbox_command",side_effect=fake_cmd), \
                  mock.patch.object(builder.subprocess,"run",
                     side_effect=lambda command,**kwargs: subprocess.CompletedProcess(command,0)):

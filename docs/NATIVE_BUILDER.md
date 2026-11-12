@@ -7,7 +7,7 @@ bridge is required; guest root and running Android emulator are optional.
 
 ## Host setup
 
-1. Install Android NDK r28+, Python 3.10+, bubblewrap, and Android SDK
+1. Install Android NDK r28+, Python 3.10+, bubblewrap and prlimit, and Android SDK
    command-line tools on a dedicated Linux x86_64 host. Enable user namespaces.
    Never run the bridge as root.
 2. Run bash lab/setup_ndk.sh with ANDROID_HOME set. It installs NDK

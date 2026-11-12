@@ -80,6 +80,7 @@ def ndk_status(ndk_home: str) -> dict:
     return {
         "ndk_configured": (toolchain/"clang").is_file() and (toolchain/"clang++").is_file(),
         "bubblewrap_available": shutil.which("bwrap") is not None,
+        "prlimit_available": shutil.which("prlimit") is not None,
         "supported_abis": list(ABI_TARGETS),
         "api_min": 24, "api_max": 35,
         "note": "No compiler execution unless NDK and bwrap are configured. "
@@ -147,6 +148,8 @@ def build_native(data: dict, artifacts_dir: Path, ndk_home: str) -> dict:
         raise RuntimeError("Android NDK not installed on lab host; set ANDROID_NDK_HOME")
     if not state["bubblewrap_available"]:
         raise RuntimeError("Install bubblewrap and enable user namespaces; no unsafe fallback")
+    if not state["prlimit_available"]:
+        raise RuntimeError("Install prlimit; no unrestricted compiler fallback")
     root = Path(ndk_home).expanduser().resolve()
     artifacts_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     results: list[dict] = []

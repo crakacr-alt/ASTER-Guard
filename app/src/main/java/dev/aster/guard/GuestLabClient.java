@@ -151,7 +151,7 @@ public final class GuestLabClient {
             .put("language",language).put("abis",targets).put("api",api)
             .put("library",library)
             .put("source_b64",android.util.Base64.encodeToString(code,android.util.Base64.NO_WRAP));
-        return postJson("/v1/native/build",payload,150000,180000);
+        return postJson("/v1/native/build",payload,150000,240000);
     }
     public JSONObject uploadApk(File file)throws Exception{
         if(!file.isFile()||file.length()<4||file.length()>96L*1024*1024)
