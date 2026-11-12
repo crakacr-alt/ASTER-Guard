@@ -39,7 +39,7 @@ import java.util.concurrent.Executors;
 public final class GuestLabActivity extends Activity {
     private static final int BG=0xff0f1523,TEXT=0xffedf6fa,MINT=0xff8cecd4,
         MUTED=0xffa4b8c8,AMBER=0xffffca82;
-    private static final int PICK_APK=5041,SAVE_HEAP=5042,PICK_NATIVE_SOURCE=5043,SAVE_NATIVE_SO=5044;
+    private static final int PICK_APK=5041,SAVE_HEAP=5042,PICK_NATIVE_SOURCE=5043,SAVE_NATIVE_SO=5044,PICK_SANDBOX_APK=5045,SAVE_SANDBOX_REPORT=5046;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private GuestLabClient lab;
     private LinearLayout root,body;
@@ -53,6 +53,31 @@ public final class GuestLabActivity extends Activity {
     private String compileLibrary="libastercustom.so";
     private int compileApi=24;
     private String nativeArtifactId="",nativeArtifactSha="",nativeArtifactName="";
+    private JSONObject sandboxState=new JSONObject();
+    private String sandboxStagedId="",sandboxReportId="",sandboxReportFormat="";
+    private final android.os.Handler sandboxHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean sandboxPolling;
+    private final Runnable sandboxTick=new Runnable(){
+        @Override public void run(){
+            if(!sandboxPolling||lab==null||isDestroyed()||isFinishing())return;
+            if(!busy){
+                worker.execute(()->{
+                    try{
+                        JSONObject next=lab.get("/v1/sandbox/status");
+                        runOnUiThread(()->{
+                            if(!sandboxPolling||isDestroyed()||isFinishing())return;
+                            String previous=sandboxState.optString("status","");
+                            String current=next.optString("status","");
+                            sandboxState=next;
+                            if(!current.equals(previous)||"running".equals(current)||
+                               "restoring".equals(current))render();
+                        });
+                    }catch(Exception ignored){}
+                });
+            }
+            sandboxHandler.postDelayed(this,3000);
+        }
+    };
     private boolean busy;
     private int dp(int x){return Math.round(getResources().getDisplayMetrics().density*x);}
 
@@ -94,6 +119,17 @@ public final class GuestLabActivity extends Activity {
             InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
         return e;
     }
+    @Override protected void onResume(){
+        super.onResume();
+        sandboxPolling=true;
+        sandboxHandler.removeCallbacks(sandboxTick);
+        sandboxHandler.postDelayed(sandboxTick,1500);
+    }
+    @Override protected void onPause(){
+        sandboxPolling=false;
+        sandboxHandler.removeCallbacks(sandboxTick);
+        super.onPause();
+    }
     private void render(){
         if(isDestroyed()||isFinishing())return;
         body.removeAllViews();
@@ -116,7 +152,8 @@ public final class GuestLabActivity extends Activity {
         line(busy?"Выполняется команда в отдельном потоке…":"Мост сопряжён · TLS-пин проверяется при каждом запросе",13,busy?AMBER:MINT);
         body.addView(button("Проверить статус гостевой Android",()->request("Статус Android",()->lab.get("/v1/status"),true)));
         body.addView(button("Отключить лабораторию",()->{
-            lab=null;status=null;packages.clear();selected="";heapId="";token="";nativeOutputs=new JSONArray();render();
+            lab=null;status=null;packages.clear();selected="";heapId="";token="";nativeOutputs=new JSONArray();
+            sandboxState=new JSONObject();sandboxStagedId="";render();
         }));
         if(status!=null){
             heading("Гость и root");
@@ -129,6 +166,55 @@ public final class GuestLabActivity extends Activity {
             line("СЕТЕВАЯ ИЗОЛЯЦИЯ: без проверенного firewall/namespace хоста безопасный запуск "+
                  "реального вредоносного ПО не гарантируется. Переключатель сети намеренно не "+
                  "имитирует защиту.",12,AMBER);
+        }
+        heading("Sandbox Analyzer · автоматический анализ APK");
+        line("Последовательность: чистый снимок гостя → установка APK → "+
+            "наблюдение → сравнение изменений → отчёт JSON/HTML → восстановление снимка. "+
+            "Все действия выполняются на отдельном root-эмуляторе, не на телефоне.",13,MUTED);
+        line("Запуск блокируется, пока администратор лаборатории не подтвердит "+
+            "проверенную блокировку сетевого выхода НА ХОСТЕ. ASTER не умеет "+
+            "самостоятельно проверять её и не гарантирует полную изоляцию.",12,AMBER);
+        body.addView(button("1. Выбрать APK для песочницы",this::pickSandboxApk));
+        if(!sandboxStagedId.isEmpty()){
+            line("Файл подготовлен в закрытом хранилище лаборатории. "+
+                "Он ещё не установлен и не запускался.",12,MINT);
+            body.addView(button("2. Запустить полный цикл анализа",this::chooseSandboxDuration));
+        }
+        body.addView(button("Обновить состояние Sandbox Analyzer",()->
+            request("Sandbox статус",()->lab.get("/v1/sandbox/status"),false)));
+        String sandboxStatus=sandboxState.optString("status","idle");
+        line("Статус: "+sandboxStatus+" · "+
+            sandboxState.optString("phase","")+
+            " · "+sandboxState.optInt("percent")+"%",13,MINT);
+        if("running".equals(sandboxStatus)||"queued".equals(sandboxStatus)||
+            "restoring".equals(sandboxStatus))
+            body.addView(button("Остановить анализ и восстановить снимок",()->
+                request("Sandbox отмена",()->lab.post("/v1/sandbox/cancel",new JSONObject()),false)));
+        JSONObject counts=sandboxState.optJSONObject("summary");
+        if(counts!=null){
+            line("Пакет: "+counts.optString("package","")+
+                "\nСозданных файлов: "+counts.optInt("created_files")+
+                " · изменённых: "+counts.optInt("changed_files")+
+                " · удалённых: "+counts.optInt("removed_files")+
+                "\nНовых пакетов: "+counts.optInt("new_packages")+
+                " · изменённых настроек: "+counts.optInt("changed_settings")+
+                "\nВосстановление снимка подтверждено: "+
+                counts.optBoolean("restored"),13,TEXT);
+            line(counts.optString("coverage_warning",
+                "Наблюдение ограничено. Не все операции попадают в журнал."),12,AMBER);
+        }
+        JSONArray timeline=sandboxState.optJSONArray("events");
+        if(timeline!=null&&timeline.length()>0){
+            line("Последние события анализа:",13,MINT);
+            for(int i=Math.max(0,timeline.length()-10);i<timeline.length();i++){
+                JSONObject step=timeline.optJSONObject(i);
+                if(step!=null)line("• "+step.optString("phase","")+
+                    ": "+step.optString("detail",""),12,MUTED);
+            }
+        }
+        if(!sandboxState.optString("report_json_artifact","").isEmpty()){
+            body.addView(button("Сохранить итоговый отчёт JSON",()->saveSandboxReport("json")));
+            body.addView(button("Сохранить итоговый отчёт HTML",()->saveSandboxReport("html")));
         }
         heading("Сборка C/C++ → нативные .so (Android NDK)");
         line("Соберите собственный исходник для ARM32/ARM64/x86/x86_64. "+
@@ -247,6 +333,11 @@ public final class GuestLabActivity extends Activity {
                 runOnUiThread(()->{
                     if(isDestroyed()||isFinishing())return;
                     busy=false;outputTitle=title;output=result.toString();
+                    if("Sandbox статус".equals(title)||
+                       "Sandbox отмена".equals(title)||
+                       "Sandbox запуск".equals(title))sandboxState=result;
+                    if("Sandbox подготовлен".equals(title))
+                        sandboxStagedId=result.optString("artifact_id","");
                     if("NDK сборка".equals(title)){
                         JSONArray created=result.optJSONArray("outputs");
                         nativeOutputs=created==null?new JSONArray():created;
@@ -359,6 +450,89 @@ public final class GuestLabActivity extends Activity {
             .setView(input).setNegativeButton("Отмена",null)
             .setPositiveButton("Отправить",(d,w)->debugCommand(mode,input.getText().toString().trim()))
             .show();
+    }
+    private void pickSandboxApk(){
+        if(lab==null)return;
+        new AlertDialog.Builder(this).setTitle("Подготовить APK для исследования?")
+            .setMessage("Выбранный файл будет передан по защищённому каналу на "+
+                "ваш лабораторный компьютер. Этот шаг НЕ устанавливает APK и "+
+                "НЕ запускает его. Не соединяйтесь с чужими лабораторными серверами.")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Выбрать APK",(dialog,which)->{
+                Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                pick.addCategory(Intent.CATEGORY_OPENABLE);
+                pick.setType("*/*");
+                pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivityForResult(pick,PICK_SANDBOX_APK);
+            }).show();
+    }
+    private void stageSandboxApk(Uri uri){
+        if(lab==null||busy)return;
+        busy=true;render();
+        worker.execute(()->{
+            File tmp=new File(getCacheDir(),"aster-sandbox-selected.apk");
+            try(InputStream in=getContentResolver().openInputStream(uri);
+                OutputStream out=new java.io.FileOutputStream(tmp,false)){
+                if(in==null)throw new java.io.IOException("Не удалось прочитать APK");
+                byte[] buffer=new byte[65536];long size=0;int len;
+                while((len=in.read(buffer))!=-1){
+                    size+=len;
+                    if(size>96L*1024*1024)
+                        throw new java.io.IOException("Лимит APK 96 МиБ");
+                    out.write(buffer,0,len);
+                }
+                if(size<4)throw new java.io.IOException("Пустой APK");
+                JSONObject result=lab.stageSandboxApk(tmp);
+                runOnUiThread(()->{
+                    if(isDestroyed()||isFinishing())return;
+                    sandboxStagedId=result.optString("artifact_id","");
+                    busy=false;outputTitle="Sandbox: APK подготовлен";
+                    output=result.toString();
+                    render();
+                });
+            }catch(Exception e){
+                runOnUiThread(()->{busy=false;error("Подготовка Sandbox APK",e);render();});
+            }finally{tmp.delete();}
+        });
+    }
+    private void chooseSandboxDuration(){
+        if(sandboxStagedId.isEmpty()||lab==null)return;
+        final int[] duration={15,30,60,120};
+        new AlertDialog.Builder(this).setTitle("Время наблюдения")
+            .setItems(new String[]{"15 секунд","30 секунд","60 секунд","120 секунд"},
+                (d,index)->confirmSandboxStart(duration[index]))
+            .setNegativeButton("Отмена",null).show();
+    }
+    private void confirmSandboxStart(int seconds){
+        new AlertDialog.Builder(this).setTitle("Запустить подозрительный APK в гостевой Android?")
+            .setMessage("Только отдельный лабораторный компьютер! "+
+                "Настройки Wi-Fi гостя НЕ гарантируют изоляцию вируса. "+
+                "До запуска необходимо самостоятельно настроить и проверить "+
+                "блокировку исходящих соединений на лабораторном хосте. "+
+                "Для восстановления ASTER сохранит системный снимок. "+
+                "Если снимок создать не удастся, APK не будет установлен. "+
+                "Согласны запустить выбранный APK в лаборатории?")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Запустить анализ",(d,w)->{
+                try{
+                    JSONObject payload=new JSONObject()
+                        .put("artifact_id",sandboxStagedId)
+                        .put("duration_seconds",seconds)
+                        .put("acknowledge_lab_risk",true);
+                    request("Sandbox запуск",()->lab.post("/v1/sandbox/begin",payload),false);
+                }catch(Exception e){error("Запуск анализа",e);}
+            }).show();
+    }
+    private void saveSandboxReport(String format){
+        if(lab==null||!("json".equals(format)||"html".equals(format)))return;
+        String id=sandboxState.optString("report_"+format+"_artifact","");
+        if(!id.matches("[0-9a-f]{32}"))return;
+        sandboxReportId=id;sandboxReportFormat=format;
+        Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType("html".equals(format)?"text/html":"application/json");
+        save.putExtra(Intent.EXTRA_TITLE,"ASTER-sandbox-report."+format);
+        startActivityForResult(save,SAVE_SANDBOX_REPORT);
     }
     private void chooseNativeOptions(){
         final String[] labels={
@@ -486,7 +660,25 @@ public final class GuestLabActivity extends Activity {
         super.onActivityResult(code,result,data);
         if(result!=RESULT_OK||data==null||data.getData()==null)return;
         Uri uri=data.getData();
-        if(code==PICK_NATIVE_SOURCE){
+        if(code==PICK_SANDBOX_APK){
+            stageSandboxApk(uri);
+        }else if(code==SAVE_SANDBOX_REPORT){
+            if(lab==null||busy||sandboxReportId.isEmpty())return;
+            busy=true;render();
+            final String id=sandboxReportId;
+            worker.execute(()->{
+                try(OutputStream out=getContentResolver().openOutputStream(uri,"w")){
+                    if(out==null)throw new java.io.IOException("Нельзя создать файл отчёта");
+                    String receipt=lab.download(id,out,"");
+                    runOnUiThread(()->{
+                        if(isDestroyed()||isFinishing())return;
+                        busy=false;outputTitle="Sandbox отчёт сохранён";output=receipt;render();
+                    });
+                }catch(Exception e){
+                    runOnUiThread(()->{busy=false;error("Сохранение отчёта",e);render();});
+                }
+            });
+        }else if(code==PICK_NATIVE_SOURCE){
             compileSelectedSource(uri);
         }else if(code==SAVE_NATIVE_SO){
             if(busy||nativeArtifactId.isEmpty()||lab==null)return;
@@ -552,5 +744,10 @@ public final class GuestLabActivity extends Activity {
             });
         }
     }
-    @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){
+        sandboxPolling=false;
+        sandboxHandler.removeCallbacks(sandboxTick);
+        worker.shutdownNow();
+        super.onDestroy();
+    }
 }
