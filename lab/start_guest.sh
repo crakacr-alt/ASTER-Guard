@@ -35,7 +35,7 @@ Never run real malicious APK before verifying host egress isolation.
 Root below is requested ONLY inside guest emulator.
 EOF
 emulator -avd "$AVD" -port 5554 -no-window -no-audio \
-  -no-snapshot -wipe-data -no-boot-anim &
+  -no-snapshot-load -no-snapshot-save -wipe-data -no-boot-anim &
 GUEST_PID=$!
 trap 'kill "$GUEST_PID" 2>/dev/null || true' EXIT
 adb -s emulator-5554 wait-for-device
@@ -46,5 +46,9 @@ if [[ "$UID_GUEST" != "0" ]]; then
   echo "This image does not support root adbd; use rootable AOSP image" >&2
   exit 1
 fi
-echo "Rooted Android guest ready. Start lab/aster_lab_bridge.py separately."
+echo "Rooted guest ready. Manual snapshots are enabled for ASTER Sandbox Analyzer."
+echo "Before unknown APK execution: configure AND VERIFY a host-side egress firewall."
+echo "Then export ASTER_LAB_EGRESS_ISOLATED=YES_I_VERIFIED_HOST_FIREWALL"
+echo "This is a host OPERATOR assertion, not an automatic firewall check."
+echo "Start lab/aster_lab_bridge.py separately."
 wait "$GUEST_PID"
