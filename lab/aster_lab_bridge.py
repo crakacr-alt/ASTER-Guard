@@ -592,7 +592,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(size))
                 name=meta.get("name","aster-heap.hprof")
-                if not re.fullmatch(r"(?:lib[A-Za-z0-9_]{1,48}\\.so|aster-heap\\.hprof|[a-zA-Z0-9_.-]{1,140}\\.hprof)",name):
+                if not re.fullmatch(r"(?:lib[A-Za-z0-9_]{1,48}\.so|aster-heap\.hprof|[a-zA-Z0-9_.-]{1,140}\.hprof)",name):
                     name="aster-artifact.bin"
                 self.send_header("Content-Disposition", 'attachment; filename="'+name+'"')
                 self.send_header("Cache-Control", "no-store")
