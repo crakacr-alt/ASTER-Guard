@@ -30,3 +30,14 @@ Open ASTER -> Overview -> Android Lab, then enter the bridge HTTPS URL, SHA-256 
 
 Unit tests: python3 -m unittest discover -s lab/tests -v
 Threat model: docs/LAB_THREAT_MODEL.md
+
+
+## NDK C/C++ native source compilation (v0.9.0)
+
+This bridge also exposes a **strictly allowlisted** native C/C++ source builder
+which does not need a running rooted Android Emulator. Set ANDROID_NDK_HOME
+to an Android NDK r28 location and install bubblewrap plus prlimit under a
+dedicated non-root user. The command-line interface runs only one C/C++
+translation unit per target ABI, with no arbitrary build scripts or shell
+arguments. See [docs/NATIVE_BUILDER.md](../docs/NATIVE_BUILDER.md) for setup,
+Android UI usage, architecture options, .so export and limitations.

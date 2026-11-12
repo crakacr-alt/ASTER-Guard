@@ -30,3 +30,21 @@ Guest bridge additionally supports a bounded in-memory PID-scoped live logcat st
 - Guest launch requires explicit user confirmation and warns about NAT. The bridge never claims root alone guarantees malware containment.
 - Host purge timer deletes stored HPROF files after 45 minutes, and again on bridge shutdown. Orphan dumps from crashes are removed when stale. Saving a dump to your phone via SAF remains under your control.
 - JDWP step-into and step-over UI commands map to the correct debugger operations. No production signing key created.
+
+
+## v0.9.0 NDK compilation trust boundary
+
+- Host Android NDK builder accepts *only* user-selected UTF-8 C/C++ source
+  up to 64 KiB, fixed 1–4 ABIs, API 24–35, and strictly validated
+  libname.so; no arbitrary shell, CMake, Makefile or custom flags.
+- Build requires bubblewrap user/mount/net namespace isolation and
+  prlimit CPU/address-space/size/file-descriptor caps, with a 45s/ABI
+  wall clock timeout. Fail closed if requirements missing.
+- Compiled .so files are NEVER executed by the lab host and are removed
+  automatically within 45 minutes. Full compiler/kernel exploit
+  containment is NOT guaranteed; use a disposable dedicated lab host.
+- ELF ABI and SHA-256 checks do not establish that a library loads or
+  satisfies missing JNI dependencies. This does not translate
+  compiled 32-bit ARM native code into 64-bit binary code.
+- Neither Android device privileges nor APK permanent signing key
+  is used by the compiler. User-owned app patch keys remain separate.

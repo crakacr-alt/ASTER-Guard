@@ -1,11 +1,12 @@
 # ASTER Guard
 
-**ASTER Guard 0.8.1** — lightweight, privacy-first Android app auditor with a modern native dark UI.
+**ASTER Guard 0.9.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
 
 > **This is an experimental security *auditor*, not a validated malware scanner.** It cannot guarantee detection, replace Play Protect, isolate threats, or inspect encrypted HTTPS payloads.
 
 ## Features
 
+- **Android NDK source builder (NEW v0.9.0):** ASTER → Overview → Android Lab → C/C++ → Native .so. Choose .c/.cpp/.cc/.cxx, API 24–35, ARM32/ARM64/x86/x86_64 or both ARM targets; compile using *your separate paired Linux laboratory PC* with Android NDK r28, bubblewrap offline sandbox and prlimit. Download ELF .so through Android document picker, validate its actual ELF ABI and import it into APK Editor, then re-sign with your user-owned key. Bounded 64 KiB single translation unit only, no CMake/Make scripts, source project multi-file compilation, conversion of proprietary 32-bit binaries or local compiler on the phone. [Setup and limits](docs/NATIVE_BUILDER.md).
 - **APK Editor and installer:** for user-authorized APKs, select file → APK Editor to inspect native ELF architecture (32-bit ARMv7/64-bit AArch64/x86/x86_64), create a new *user-owned* RSA signing key in Android Keystore (separate from ASTER's production key), change AndroidManifest minSdk/targetSdk, modify explicit opted-in analytics flags in assets/*.json, remove a chosen asset, import a **prebuilt** compatible native .so, rebuild, page-align stored .so on 16 KiB boundaries, sign v1/v2/v3 and verify APK. Rebuild limits: APK 96 MiB, total decompressed 256 MiB. **No automatic native 32↔64 conversion**; machine code requires source-based recompilation.
 - **Shizuku APK install (experimental):** streams the explicitly selected APK to the ADB/shell user service; diagnoses old target SDK vs unsatisfiable minSdk, signature mismatch, ABI mismatch, missing splits and other install errors. On Android 14+ supports confirmation-gated --bypass-low-target-sdk-block for low target SDK, **not** for minSdk above current API. Never claims compatibility or requires uninstalling third-party apps silently.
 - **In-app code privacy lab:** inspect DEX call sites referencing ad and tracking SDKs, advertising ID, device ID, location, microphone, contacts, SMS, shell and network APIs. Calls are static references, **not live execution proof**. Opt-in Shizuku AppOps overrides for a limited selection of sensitive permissions on user apps.
@@ -62,7 +63,7 @@ An ARMv7 32-bit ELF .so cannot become an AArch64 64-bit .so by changing headers 
 
 ## Get an APK
 
-**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.8.1-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.8.1/ASTER-Guard-v0.8.1-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
+**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.9.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.9.0/ASTER-Guard-v0.9.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 
