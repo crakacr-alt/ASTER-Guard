@@ -1,11 +1,13 @@
 # ASTER Guard
 
-**ASTER Guard 0.7.2** — lightweight, privacy-first Android app auditor with a modern native dark UI.
+**ASTER Guard 0.8.0** — lightweight, privacy-first Android app auditor with a modern native dark UI.
 
 > **This is an experimental security *auditor*, not a validated malware scanner.** It cannot guarantee detection, replace Play Protect, isolate threats, or inspect encrypted HTTPS payloads.
 
 ## Features
 
+- **APK Editor and installer:** for user-authorized APKs, select file → APK Editor to inspect native ELF architecture (32-bit ARMv7/64-bit AArch64/x86/x86_64), create a new *user-owned* RSA signing key in Android Keystore (separate from ASTER's production key), change AndroidManifest minSdk/targetSdk, modify explicit opted-in analytics flags in assets/*.json, remove a chosen asset, import a **prebuilt** compatible native .so, rebuild, page-align stored .so on 16 KiB boundaries, sign v1/v2/v3 and verify APK. Rebuild limits: APK 96 MiB, total decompressed 256 MiB. **No automatic native 32↔64 conversion**; machine code requires source-based recompilation.
+- **Shizuku APK install (experimental):** streams the explicitly selected APK to the ADB/shell user service; diagnoses old target SDK vs unsatisfiable minSdk, signature mismatch, ABI mismatch, missing splits and other install errors. On Android 14+ supports confirmation-gated --bypass-low-target-sdk-block for low target SDK, **not** for minSdk above current API. Never claims compatibility or requires uninstalling third-party apps silently.
 - **In-app code privacy lab:** inspect DEX call sites referencing ad and tracking SDKs, advertising ID, device ID, location, microphone, contacts, SMS, shell and network APIs. Calls are static references, **not live execution proof**. Opt-in Shizuku AppOps overrides for a limited selection of sensitive permissions on user apps.
 - **In-app guest Android lab controller:** all controls run inside ASTER UI. Pair with a **separately running** rooted AOSP Android Emulator on your own lab host using pinned TLS cert SHA-256 + token; choose guest app, upload APK with explicit consent, start/stop, guest radio soft controls, PID logcat, proc/maps/native backtrace, Java JDWP attach/step/breakpoints (only debuggable VM processes), and optional HPROF heap dump saved through Android file picker. Host bridge/API in lab/ directory. **The guest OS is not inside the APK and root never touches the main phone.**
 - **Important lab safety:** radio off does NOT guarantee host egress isolation, and logs do not capture every syscall. Use verified host firewall/network namespace and disposable host before opening live malware. APK repatching/re-signing, full Java decompilation and native LLDB are not implemented.
@@ -54,9 +56,13 @@ An **EXE** is recognized as a Windows executable but not emulated or sandboxed. 
 4. Guest radio settings are soft; do not run unknown live malware without externally verified host egress isolation.
 5. Host security constraints are documented in [lab threat model](docs/LAB_THREAT_MODEL.md). The controller has **no arbitrary host/ADB shell endpoint** and does not execute an APK on the primary phone.
 
+## Native ABI support: what it means
+
+An ARMv7 32-bit ELF .so cannot become an AArch64 64-bit .so by changing headers or moving it from lib/armeabi-v7a to lib/arm64-v8a. ASTER validates ELF machine type, bitness and expected lib/<abi> placement. You can import a genuinely prebuilt matching ELF into a rebuilt APK; for libraries you own, rebuild source using Android NDK for the new ABI. ZIP page alignment is preserved, but ELF segment p_align, transitive library dependencies, Java/JNI interfaces, platform API availability and per-device installation still need testing. This is **not** a guaranteed installation fix.
+
 ## Get an APK
 
-**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.7.2-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.7.2/ASTER-Guard-v0.7.2-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
+**[Download the Android APK from Latest GitHub Release](https://github.com/crakacr-alt/ASTER-Guard/releases/latest)** — in *Assets*, tap **`ASTER-Guard-v0.8.0-debug.apk`**. Direct link: [APK for Android](https://github.com/crakacr-alt/ASTER-Guard/releases/download/v0.8.0/ASTER-Guard-v0.8.0-debug.apk). **This is a debug-key test build**, promoted to the normal visible Releases page for easier download; it is *not* a production-signed security product.
 
 The CI [GitHub Actions workflow](https://github.com/crakacr-alt/ASTER-Guard/actions/workflows/android.yml) automatically runs tests, lint, builds the APK and publishes the versioned test release after success. GitHub Actions also retains the `ASTER-Guard-debug-apk` build artifact.
 

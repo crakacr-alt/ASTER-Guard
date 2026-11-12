@@ -87,3 +87,12 @@ Clean builds, unit tests, Android lint, on-device Android 6/8/10/12/14/15/16 tes
 - No hard host-level network firewall is implemented: guest radio soft toggle is explicitly not reliable quarantine. Never test unknown malware until host egress isolation is verified separately.
 - This release does not provide an Android VM booting inside phone, full syscall trace, generic ADB console, native LLDB or APK repack/sign implementation.
 - CI only tests bridge command validation and emulator UI smoke, not actual host bridge dynamic debug/heap/network isolation end-to-end.
+
+
+## v0.8.0 User-owned APK editing
+
+- APK editing actions require explicitly selected files, never modify installed app binaries in place. AndroidKeyStore user keys are separate from the ASTER app release signing key.
+- ARSCLib edits binary AndroidManifest and apksig produces independently verified v1/v2/v3 signed output. Rebuilding invalidates original developer signature; signature mismatch cannot be bypassed through Shizuku.
+- APK editor limits input to 96 MiB and inflated stream to 256 MiB. Only explicitly named JSON privacy flags and assets are patched. No purchase/license bypass or arbitrary bytecode patching is done.
+- Native ELF parser verifies class and e_machine. An imported .so must be a truly compiled file matching the designated ABI; no conversion 32-bit↔64-bit. Rebuilt stored .so are 16 KiB ZIP-page-aligned, but ELF segment alignment and runtime dependencies are not guaranteed.
+- Shizuku service receives APK bytes through a ParcelFileDescriptor and invokes allowlisted pm install with limited flags; this cannot override incompatible minSdk, signatures, platform security or ABI.
