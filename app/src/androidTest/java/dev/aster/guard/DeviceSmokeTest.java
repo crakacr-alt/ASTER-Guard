@@ -85,6 +85,42 @@ public final class DeviceSmokeTest {
         assertFalse(activity.isFinishing());
         activity.runOnUiThread(activity::finish);
     }
+    @Test public void apkEditorCanResignItsOwnApk() throws Exception {
+        android.content.pm.ApplicationInfo info=target().getPackageManager()
+            .getApplicationInfo(target().getPackageName(),0);
+        java.io.File input=new java.io.File(info.sourceDir);
+        java.io.File resultFile=new java.io.File(target().getCacheDir(),"aster-editor-ui-test.apk");
+        try {
+            if(!ApkPatchSigner.exists("uitest"))ApkPatchSigner.createKey("uitest");
+            ApkPatchSigner.Plan plan=new ApkPatchSigner.Plan();
+            ApkPatchSigner.Result r=ApkPatchSigner.rebuildAndSign(
+                input,resultFile,"uitest",plan);
+            assertTrue("Rebuilt APK must have a valid v1/v2/v3 signature",r.verified);
+            assertEquals(64,r.hash.length());
+            assertTrue(r.file.length()>0);
+        }finally {resultFile.delete();}
+    }
+    @Test public void workshopUiOpensWithAppPrivateApk() throws Exception {
+        // Do not open a user APK automatically. A private copy is required.
+        android.content.pm.ApplicationInfo info=target().getPackageManager()
+            .getApplicationInfo(target().getPackageName(),0);
+        java.io.File destination=new java.io.File(target().getCacheDir(),"app-test.apk");
+        try(java.io.InputStream in=new java.io.FileInputStream(info.sourceDir);
+            java.io.OutputStream out=new java.io.FileOutputStream(destination)){
+            byte[] b=new byte[32768];int n;
+            while((n=in.read(b))!=-1)out.write(b,0,n);
+        }
+        Intent intent=new Intent(target(),ApkWorkshopActivity.class);
+        intent.putExtra("archivePath",destination.getAbsolutePath());
+        intent.putExtra("label","ASTER self-test");
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity=InstrumentationRegistry.getInstrumentation().startActivitySync(intent);
+        assertNotNull(activity);
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+        assertFalse(activity.isFinishing());
+        activity.runOnUiThread(activity::finish);
+        destination.delete();
+    }
     @Test public void liveCaptureIntentIsExplicitOnly(){
         Intent request=LiveCaptureSession.controlIntent("start","com.example.safeapp");
         assertEquals("start",request.getStringExtra("action"));
