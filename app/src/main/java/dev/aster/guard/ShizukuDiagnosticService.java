@@ -129,7 +129,21 @@ public final class ShizukuDiagnosticService extends IExecService.Stub {
                     remaining-=len;
                 }
             }
-            if(!process.waitFor(70,TimeUnit.SECONDS)){
+            boolean finished=false;
+            if(android.os.Build.VERSION.SDK_INT>=26){
+                finished=process.waitFor(70,TimeUnit.SECONDS);
+            }else{
+                long deadline=android.os.SystemClock.elapsedRealtime()+70000L;
+                while(android.os.SystemClock.elapsedRealtime()<deadline){
+                    try{
+                        process.exitValue();
+                        finished=true;break;
+                    }catch(IllegalThreadStateException stillRunning){
+                        Thread.sleep(75);
+                    }
+                }
+            }
+            if(!finished){
                 process.destroy();
                 return "INSTALL_TIMEOUT: установка превысила 70 секунд.";
             }
