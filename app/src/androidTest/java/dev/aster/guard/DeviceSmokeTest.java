@@ -150,6 +150,32 @@ public final class DeviceSmokeTest {
         activity.runOnUiThread(activity::finish);
         destination.delete();
     }
+    private boolean viewHasText(android.view.View view,String needle){
+        if(view instanceof android.widget.TextView){
+            CharSequence value=((android.widget.TextView)view).getText();
+            if(value!=null&&value.toString().contains(needle))return true;
+        }
+        if(view instanceof android.view.ViewGroup){
+            android.view.ViewGroup group=(android.view.ViewGroup)view;
+            for(int i=0;i<group.getChildCount();i++)
+                if(viewHasText(group.getChildAt(i),needle))return true;
+        }
+        return false;
+    }
+    @Test public void androidLabShowsLocalModeAndOwnHostGuideWithoutConnection(){
+        Intent intent=new Intent(target(),GuestLabActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity=InstrumentationRegistry.getInstrumentation().startActivitySync(intent);
+        assertNotNull(activity);
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+        android.view.View decor=activity.getWindow().getDecorView();
+        assertTrue("Offline local scan entry must exist",viewHasText(decor,"Локально на этом телефоне"));
+        assertTrue("Own server setup entry must exist",viewHasText(decor,"автоустановка"));
+        assertTrue("No guest VM claim",viewHasText(decor,"НЕ создаёт гостевую Android-систему"));
+        assertFalse("Don't mislead phone user with server localhost",
+            viewHasText(decor,"https://127.0.0.1:8742"));
+        activity.runOnUiThread(activity::finish);
+    }
     @Test public void liveCaptureIntentIsExplicitOnly(){
         Intent request=LiveCaptureSession.controlIntent("start","com.example.safeapp");
         assertEquals("start",request.getStringExtra("action"));
