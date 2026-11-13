@@ -292,6 +292,54 @@ def diff(before: dict, after: dict) -> dict[str, Any]:
     }
 
 
+def validated_static_analysis(raw: Any, expected_sha256: str) -> dict[str, Any] | None:
+    """Accept opt-in, bounded on-device evidence ONLY when the staged APK hash matches.
+
+    Never use client-supplied references to decide what guest code executed.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or raw.get("schema") != "aster-static-v1":
+        raise ValueError("Unsupported static report schema")
+    given = raw.get("sha256")
+    if not isinstance(given, str) or not re.fullmatch(r"[a-f0-9]{64}", given):
+        raise ValueError("Static report has invalid SHA-256")
+    if given != expected_sha256:
+        raise ValueError("Static evidence APK hash does not match staged APK")
+    counts: dict[str, dict[str, int]] = {}
+    for source, cap in (("sdk_references", 24), ("api_references", 32)):
+        values = raw.get(source, {})
+        if not isinstance(values, dict) or len(values) > cap:
+            raise ValueError("Static references exceed supported limits")
+        normalized = {}
+        for name, number in values.items():
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_. /:+-]{1,96}", name):
+                raise ValueError("Invalid static reference name")
+            if type(number) is not int or number < 0 or number > 100000:
+                raise ValueError("Invalid static reference count")
+            normalized[name] = number
+        counts[source] = normalized
+    fields = {}
+    for field in ("dex_files", "classes", "methods"):
+        count = raw.get(field, 0)
+        if type(count) is not int or not 0 <= count <= 1000000:
+            raise ValueError("Invalid DEX count")
+        fields[field] = count
+    filename = raw.get("filename", "")
+    if not isinstance(filename, str):
+        raise ValueError("Invalid file label")
+    return {
+        "schema": "aster-static-v1",
+        "sha256": given,
+        "source": "on_device_dex_references_only",
+        "filename": filename[:120],
+        "complete": raw.get("complete") is True,
+        **fields,
+        **counts,
+        "warning": "DEX references only; not proof that APIs were executed.",
+    }
+
+
 def report_json(report: dict[str, Any]) -> bytes:
     raw = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2)
     return raw.encode("utf-8")
@@ -306,6 +354,7 @@ def report_html(report: dict[str, Any]) -> bytes:
         ("Приложение", report.get("package", "")),
         ("Статус", report.get("status", "")),
         ("Изоляция", report.get("isolation", "")),
+        ("Статический анализ DEX (не подтверждение выполнения)", report.get("static_analysis", {})),
         ("Изменения", report.get("comparison", {})),
         ("Хронология", report.get("timeline", [])),
         ("Ограничения", report.get("limitations", [])),
