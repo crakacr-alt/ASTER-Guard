@@ -123,6 +123,47 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(result["restored"])
         self.assertIn("Not all actions", result["coverage_warning"])
 
+    def test_static_report_accepts_only_matching_apk_sha(self):
+        digest="a"*64
+        data={
+            "schema":"aster-static-v1","sha256":digest,
+            "filename":"horizon-android.apk","complete":True,
+            "dex_files":2,"classes":155,"methods":800,
+            "sdk_references":{"Firebase Analytics":3},
+            "api_references":{"sms":4, "camera":1}
+        }
+        result=sandbox.validated_static_analysis(data,digest)
+        self.assertEqual(3,result["sdk_references"]["Firebase Analytics"])
+        self.assertIn("not proof",result["warning"])
+        self.assertEqual("horizon-android.apk",result["filename"])
+        with self.assertRaisesRegex(ValueError,"does not match"):
+            sandbox.validated_static_analysis(data,"b"*64)
+
+    def test_static_report_rejects_injection_and_invalid_counters(self):
+        valid={"schema":"aster-static-v1","sha256":"c"*64}
+        self.assertIsNone(sandbox.validated_static_analysis(None,"c"*64))
+        for patch in (
+            {"schema":"fake"},
+            {"sdk_references":{"<script>alert(1)</script>":2}},
+            {"api_references":{"camera":-1}},
+            {"classes":True},
+            {"methods":1000001},
+        ):
+            data={**valid,**patch}
+            with self.assertRaises(ValueError):
+                sandbox.validated_static_analysis(data,"c"*64)
+
+    def test_offline_html_includes_static_evidence_and_escapes_strings(self):
+        report={
+            "session_id":"test",
+            "static_analysis":{"filename":"<img src=evil>"},
+            "comparison":{}
+        }
+        text=sandbox.report_html(report).decode("utf-8")
+        self.assertIn("Статический анализ DEX",text)
+        self.assertIn("&lt;img src=evil&gt;",text)
+        self.assertNotIn("<img src=evil>",text)
+
     def test_network_endpoints_decode_guest_table_without_app_attribution(self):
         sample = (
             "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
