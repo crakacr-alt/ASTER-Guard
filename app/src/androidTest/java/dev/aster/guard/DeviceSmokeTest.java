@@ -162,6 +162,50 @@ public final class DeviceSmokeTest {
         }
         return false;
     }
+    @Test public void staticCodeLabOffersDynamicSandboxForTheSameSelectedApk() throws Exception {
+        android.content.pm.ApplicationInfo app=target().getPackageManager()
+            .getApplicationInfo(target().getPackageName(),0);
+        java.io.File destination=new java.io.File(target().getCacheDir(),
+            "aster-integration-selected.apk");
+        try(java.io.InputStream in=new java.io.FileInputStream(app.sourceDir);
+            java.io.OutputStream out=new java.io.FileOutputStream(destination)){
+            byte[] buffer=new byte[32768];int n;
+            while((n=in.read(buffer))!=-1)out.write(buffer,0,n);
+        }
+        try{
+            Intent staticIntent=new Intent(target(),PrivacyLabActivity.class);
+            staticIntent.putExtra("archivePath",destination.getAbsolutePath());
+            staticIntent.putExtra("packageName",target().getPackageName());
+            staticIntent.putExtra("label","test-apk · без установки");
+            staticIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Activity staticLab=InstrumentationRegistry.getInstrumentation()
+                .startActivitySync(staticIntent);
+            assertNotNull(staticLab);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertTrue("The selected APK should have a direct sandbox path",
+                viewHasText(staticLab.getWindow().getDecorView(),
+                    "Продолжить: анализ поведения APK в Android Lab"));
+            staticLab.runOnUiThread(staticLab::finish);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+
+            Intent dynamicIntent=new Intent(target(),GuestLabActivity.class);
+            dynamicIntent.putExtra("archivePath",destination.getAbsolutePath());
+            dynamicIntent.putExtra("label","test-apk · без установки");
+            dynamicIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Activity dynamicLab=InstrumentationRegistry.getInstrumentation()
+                .startActivitySync(dynamicIntent);
+            assertNotNull(dynamicLab);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertTrue("Selected APK must be preserved for subsequent guest upload",
+                viewHasText(dynamicLab.getWindow().getDecorView(),
+                    "Выбран для комплексного анализа"));
+            assertTrue("This is still an external guest, not a phone-hosted VM",
+                viewHasText(dynamicLab.getWindow().getDecorView(),
+                    "НЕ внутри этого APK"));
+            dynamicLab.runOnUiThread(dynamicLab::finish);
+        }finally{destination.delete();}
+    }
+
     @Test public void androidLabShowsLocalModeAndOwnHostGuideWithoutConnection(){
         Intent intent=new Intent(target(),GuestLabActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
