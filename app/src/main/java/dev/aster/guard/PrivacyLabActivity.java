@@ -7,6 +7,10 @@ import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
+import org.json.JSONObject;
+import org.json.JSONArray;
+import java.io.FileInputStream;
+import java.security.MessageDigest;
 import android.graphics.Typeface;
 import android.view.Gravity;
 import android.widget.Button;
@@ -113,13 +117,26 @@ public final class PrivacyLabActivity extends Activity {
         }
         if(report!=null)content.addView(button("Скопировать отчёт и план приватности",this::copyReport));
         content.addView(button("Поделиться журналом действий ASTER",this::shareJournal));
-        section("Изоляция и гостевая Android");
-        line("Полноценная Android 7+ VM с root, x86/x86_64 и запуском подозрительных APK в этом APK пока НЕ реализована. "+
-            "Обычный Android не даёт сторонним приложениям AVF/Microdroid как полноценный Android-эмулятор. "+
-            "Shizuku не создаёт виртуальную машину и не обеспечивает изоляцию вредоносного кода.",13,AMBER);
-        line("Поэтому кнопки «Запустить вирус в песочнице» нет: выполнять неизвестный APK на основном телефоне было бы небезопасно. "+
-            "Журнал ниже фиксирует действия ASTER и статические свидетельства, а НЕ каждое действие исполняемого приложения.",12,MUTED);
+        section("Динамический анализ · отдельная Android-песочница");
+        line("Теперь можно продолжить исследование этого же APK в ASTER Sandbox Analyzer: "+
+            "снимок гостевой системы до установки → запуск под наблюдением → "+
+            "сравнение изменений → единый отчёт JSON/HTML → восстановление. "+
+            "Результаты статического DEX-анализа будут включены в отчёт при совпадении SHA-256.",13,TEXT);
+        if(!archivePath.isEmpty()){
+            content.addView(button("Продолжить: анализ поведения APK в Android Lab",this::openDynamicLab));
+            line("Выбранный APK будет передан только на ВАШ сопряжённый лабораторный компьютер "+
+                "после явного подтверждения. Никакой запуск на основном телефоне не выполняется.",12,AMBER);
+        }else{
+            content.addView(button("Открыть Android Lab (выбор APK)",this::openDynamicLab));
+            line("Для установленного приложения выберите его исходный APK через системный "+
+                "проводник в Android Lab. Эта страница сама приложение не запускает.",12,MUTED);
+        }
+        line("Полноценный Android 7+ с root работает на отдельном AOSP-эмуляторе под "+
+            "управлением ASTER. На основном телефоне пока доступен только статический анализ. "+
+            "Shizuku не создаёт независимую виртуальную ОС и не обеспечивает её изоляцию.",12,AMBER);
         section("Журнал ASTER");
+        line("Ниже журнал действий интерфейса и статического анализа, а не системный "+
+            "журнал гостевого приложения. Системный отчёт создаётся в Android Lab.",12,MUTED);
         synchronized(journal){
             for(int i=Math.max(0,journal.size()-16);i<journal.size();i++)
                 line("• "+journal.get(i),12,MUTED);
@@ -199,6 +216,85 @@ public final class PrivacyLabActivity extends Activity {
                 });
             }
         });
+    }
+    /** Carry the exact user-selected cached APK into the isolated lab workflow. */
+    private void openDynamicLab(){
+        if(busy)return;
+        if(archivePath.isEmpty()){
+            startActivity(new Intent(this,GuestLabActivity.class));
+            return;
+        }
+        if(!checkCachePath(archivePath)){
+            new AlertDialog.Builder(this).setTitle("APK недоступен")
+                .setMessage("Исходный файл из кэша ASTER больше не доступен. "+
+                    "Выберите APK заново через проверку файлов.")
+                .setPositiveButton("Закрыть",null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Передать APK в гостевую лабораторию?")
+            .setMessage("Продолжим исследование выбранного APK. После подключения "+
+                "к вашему частному серверу потребуется отдельное подтверждение "+
+                "передачи файла, а затем подтверждение запуска в root-эмуляторе. "+
+                "На основном телефоне APK никогда не запустится.")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Перейти к анализу",(dialog,which)->{
+                busy=true;render();
+                worker.execute(()->{
+                    String staticJson="";
+                    try{
+                        File selected=new File(archivePath).getCanonicalFile();
+                        if(!checkCachePath(selected.getPath()))
+                            throw new java.io.IOException("APK недоступен");
+                        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+                        try(FileInputStream input=new FileInputStream(selected)){
+                            byte[] bytes=new byte[65536];int count;
+                            while((count=input.read(bytes))!=-1)
+                                digest.update(bytes,0,count);
+                        }
+                        StringBuilder hash=new StringBuilder();
+                        for(byte value:digest.digest())
+                            hash.append(String.format(Locale.ROOT,"%02x",value&255));
+                        JSONObject evidence=new JSONObject()
+                            .put("schema","aster-static-v1")
+                            .put("sha256",hash.toString())
+                            .put("source","on_device_dex_references_only")
+                            .put("filename",label.substring(0,Math.min(label.length(),120)))
+                            .put("complete",report!=null&&!report.limited)
+                            .put("dex_files",report==null?0:report.dexFiles)
+                            .put("classes",report==null?0:report.classes)
+                            .put("methods",report==null?0:report.methods);
+                        JSONObject sdk=new JSONObject(),calls=new JSONObject();
+                        if(report!=null){
+                            int n=0;
+                            for(Map.Entry<String,Integer> e:report.sdkPackages.entrySet()){
+                                if(++n>24)break;
+                                sdk.put(e.getKey(),e.getValue());
+                            }
+                            n=0;
+                            for(Map.Entry<String,Integer> e:report.ruleCounts.entrySet()){
+                                if(++n>32)break;
+                                calls.put(e.getKey(),e.getValue());
+                            }
+                        }
+                        evidence.put("sdk_references",sdk).put("api_references",calls)
+                            .put("warning","Static call references do NOT prove execution.");
+                        staticJson=evidence.toString();
+                    }catch(Exception e){
+                        event("Не удалось добавить статические сведения: "+e.getClass().getSimpleName());
+                    }
+                    final String serialized=staticJson;
+                    runOnUiThread(()->{
+                        if(isFinishing()||isDestroyed())return;
+                        busy=false;render();
+                        Intent intent=new Intent(this,GuestLabActivity.class);
+                        intent.putExtra("archivePath",archivePath);
+                        intent.putExtra("label",label);
+                        if(!serialized.isEmpty())intent.putExtra("staticAnalysis",serialized);
+                        event("Открыт Sandbox Analyzer для этого же APK (ещё без запуска)");
+                        startActivity(intent);
+                    });
+                });
+            }).show();
     }
     private void openDex(){
         Intent intent=new Intent(this,DexExplorerActivity.class);
