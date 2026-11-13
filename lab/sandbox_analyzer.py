@@ -234,6 +234,39 @@ def snapshot(lab, package: str = "") -> dict[str, Any]:
     return data
 
 
+def observe_guest_interval(lab, package: str, elapsed: int) -> dict[str, Any]:
+    """Bounded interval sample of selected app files and GUEST-WIDE sockets.
+
+    Not kernel event tracing: transient actions between samples are missed.
+    """
+    package = safe_package(package)
+    files_raw, files_ok = _optional_adb(
+        lab, "shell", "sh", "-c", FILES_SCRIPT, "_", package,
+        timeout=12, limit=96000
+    )
+    files = file_metadata(files_raw) if files_ok else {}
+    endpoints: set[str] = set()
+    errors: list[str] = []
+    if not files_ok:
+        errors.append("selected-app file sample unavailable")
+    for table in ("tcp", "tcp6", "udp", "udp6"):
+        raw, ok = _optional_adb(
+            lab, "shell", "cat", "/proc/net/" + table,
+            timeout=6, limit=16000
+        )
+        if ok:
+            endpoints.update(parse_remote_endpoints(raw, table))
+        else:
+            errors.append("guest-wide " + table + " unavailable")
+    return {
+        "elapsed_seconds": elapsed,
+        "target_files": files,
+        "guest_wide_network_endpoints": sorted(endpoints)[:120],
+        "errors": errors,
+        "scope": "bounded app file metadata + guest-wide sockets; not per-PID PCAP",
+    }
+
+
 def diff(before: dict, after: dict) -> dict[str, Any]:
     """Explicitly scoped comparison. May not see ephemeral/transient changes."""
     start_pkgs = set(before.get("third_party_packages", []))
