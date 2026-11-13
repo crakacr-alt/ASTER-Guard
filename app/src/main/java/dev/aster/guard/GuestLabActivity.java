@@ -55,6 +55,7 @@ public final class GuestLabActivity extends Activity {
     private String nativeArtifactId="",nativeArtifactSha="",nativeArtifactName="";
     private JSONObject sandboxState=new JSONObject();
     private String sandboxStagedId="",sandboxReportId="",sandboxReportFormat="";
+    private String selectedInputApk="",selectedInputLabel="",staticEvidence="";
     private final android.os.Handler sandboxHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean sandboxPolling;
     private final Runnable sandboxTick=new Runnable(){
@@ -80,9 +81,34 @@ public final class GuestLabActivity extends Activity {
     };
     private boolean busy;
     private int dp(int x){return Math.round(getResources().getDisplayMetrics().density*x);}
+    /** Never allow Intent extras to read arbitrary phone files. */
+    private boolean validSelectedApk(String path){
+        try{
+            File file=new File(path).getCanonicalFile();
+            return file.isFile()&&
+                file.getParentFile().equals(getCacheDir().getCanonicalFile())&&
+                file.getName().endsWith(".apk")&&
+                file.length()>4&&file.length()<=96L*1024*1024;
+        }catch(Exception e){return false;}
+    }
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
+        String incoming=getIntent().getStringExtra("archivePath");
+        if(incoming!=null&&validSelectedApk(incoming)){
+            selectedInputApk=incoming;
+            String incomingLabel=getIntent().getStringExtra("label");
+            selectedInputLabel=incomingLabel==null?"Выбранный APK":incomingLabel;
+            String evidence=getIntent().getStringExtra("staticAnalysis");
+            if(evidence!=null&&evidence.length()<5500){
+                try{
+                    JSONObject parsed=new JSONObject(evidence);
+                    if("aster-static-v1".equals(parsed.optString("schema"))&&
+                       parsed.optString("sha256","").matches("[a-f0-9]{64}"))
+                        staticEvidence=evidence;
+                }catch(Exception ignored){}
+            }
+        }
         getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);root.setPadding(dp(12),dp(8),dp(12),0);
@@ -134,6 +160,13 @@ public final class GuestLabActivity extends Activity {
         if(isDestroyed()||isFinishing())return;
         body.removeAllViews();
         line("Гостевая Android 7+ · отдельная лаборатория",19,TEXT);
+        if(!selectedInputApk.isEmpty()){
+            line("Выбран для комплексного анализа: "+selectedInputLabel,15,MINT);
+            line(staticEvidence.isEmpty()?
+                "Статический анализ не приложен; будет собран динамический отчёт.":
+                "Сведения о DEX готовы к объединению с отчётом. SHA-256 будет "+
+                "дополнительно проверен на сервере.",12,MUTED);
+        }
         line("Весь пульт управления расположен в ASTER. Сам Android Emulator с root работает на вашем отдельном ПК/сервере, "+
              "а НЕ внутри этого APK или основного телефона. Не запускайте подозрительный APK на основной ОС.",13,AMBER);
         heading("Режим лаборатории");
@@ -187,7 +220,9 @@ public final class GuestLabActivity extends Activity {
         line("Запуск блокируется, пока администратор лаборатории не подтвердит "+
             "проверенную блокировку сетевого выхода НА ХОСТЕ. ASTER не умеет "+
             "самостоятельно проверять её и не гарантирует полную изоляцию.",12,AMBER);
-        body.addView(button("1. Выбрать APK для песочницы",this::pickSandboxApk));
+        if(!selectedInputApk.isEmpty())
+            body.addView(button("1. Передать этот APK из лаборатории кода",this::confirmStageSelected));
+        body.addView(button("Или выбрать другой APK из памяти",this::pickSandboxApk));
         if(!sandboxStagedId.isEmpty()){
             line("Файл подготовлен в закрытом хранилище лаборатории. "+
                 "Он ещё не установлен и не запускался.",12,MINT);
@@ -495,6 +530,28 @@ public final class GuestLabActivity extends Activity {
             .setPositiveButton("Отправить",(d,w)->debugCommand(mode,input.getText().toString().trim()))
             .show();
     }
+    private void confirmStageSelected(){
+        if(busy||lab==null||selectedInputApk.isEmpty())return;
+        if(!validSelectedApk(selectedInputApk)){
+            error("APK",new java.io.IOException("Файл из кэша ASTER больше не доступен"));
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Загрузить выбранный APK в лабораторию?")
+            .setMessage("APK "+selectedInputLabel+" будет передан на ваш "+
+                "сопряжённый частный ПК через TLS с проверкой SHA-256 сертификата. "+
+                "В гостевую систему он ещё НЕ будет установлен. "+
+                "Запуск возможен только после отдельного подтверждения и "+
+                "проверенного сетевого ограничения лаборатории.")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Передать на свой ПК",(dialog,which)->{
+                if(!validSelectedApk(selectedInputApk)){
+                    error("APK",new java.io.IOException("Исходный APK изменился или недоступен"));
+                    return;
+                }
+                File input=new File(selectedInputApk);
+                request("Sandbox подготовлен",()->lab.stageSandboxApk(input),false);
+            }).show();
+    }
     private void pickSandboxApk(){
         if(lab==null)return;
         new AlertDialog.Builder(this).setTitle("Подготовить APK для исследования?")
@@ -563,6 +620,8 @@ public final class GuestLabActivity extends Activity {
                         .put("artifact_id",sandboxStagedId)
                         .put("duration_seconds",seconds)
                         .put("acknowledge_lab_risk",true);
+                    if(!staticEvidence.isEmpty()&&!selectedInputApk.isEmpty())
+                        payload.put("static_analysis",new JSONObject(staticEvidence));
                     request("Sandbox запуск",()->lab.post("/v1/sandbox/begin",payload),false);
                 }catch(Exception e){error("Запуск анализа",e);}
             }).show();
