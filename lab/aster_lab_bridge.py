@@ -564,6 +564,10 @@ class Lab:
                                   "ONLY after configuring and verifying host firewall/namespace.")
         if not consent:
             raise PermissionError("Explicit confirmation of guest execution and host risk required")
+        from sandbox_analyzer import validated_static_analysis
+        static_evidence = validated_static_analysis(
+            payload.get("static_analysis"), meta["sha256"]
+        )
         self.root_required()
         # Clean starting state required, rather than silently replacing an installed app.
         session_id = uuid.uuid4().hex
@@ -577,7 +581,7 @@ class Lab:
         self.sandbox_worker = threading.Thread(
             target=self._sandbox_execute,
             args=(session_id, str(meta["path"]), str(meta["sha256"]), seconds,
-                  self.sandbox_cancel),
+                  self.sandbox_cancel, static_evidence),
             name="aster-sandbox-" + session_id[:6], daemon=True
         )
         self.sandbox_worker.start()
@@ -592,13 +596,15 @@ class Lab:
         return self.sandbox_status()
 
     def _sandbox_execute(self, session_id: str, apk: str, apk_sha: str,
-                         seconds: int, cancelled: threading.Event):
+                         seconds: int, cancelled: threading.Event,
+                         static_evidence: dict | None = None):
         from sandbox_analyzer import snapshot, diff, report_json, report_html, summary, utc
         checkpoint = "aster_" + session_id[:18]
         report = {
             "format": "aster-sandbox-v1",
             "session_id": session_id, "started_at": utc(),
             "apk_sha256": apk_sha, "duration_requested_seconds": seconds,
+            "static_analysis": static_evidence,
             "status": "running", "package": "", "timeline": [],
             "errors": [], "limitations": [
                 "Only selected guest snapshot metadata, selected package files, AppOps, "
