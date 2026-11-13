@@ -1079,7 +1079,7 @@ public final class MainActivity extends Activity {
         body.addView(limits,fill(17));
 
         LinearLayout about=card();
-        about.addView(text("ASTER Guard 0.11.0",16,TEXT,true),fill(7));
+        about.addView(text("ASTER Guard 0.12.0",16,TEXT,true),fill(7));
         about.addView(text("Java · Android 7+ · ARMv7 / ARM64 · DEX/Smali, Shizuku",12,MUTED,false),fill(11));
         if(newRelease!=null){
             about.addView(button("Доступно обновление "+newRelease.version,true,v->openExternal(newRelease.url)),fill(10));

@@ -67,3 +67,11 @@ Guest bridge additionally supports a bounded in-memory PID-scoped live logcat st
   escaped and script-free. Test reports are not uploaded to GitHub.
 - Android tests check compilation/UI; full host sandbox containment, real
   malicious samples and snapshot restore still need controlled validation.
+
+
+## v0.12.0 combined evidence and intermediate sampling
+
+- The code-lab handoff accepts only a regular APK within ASTER's own private cache directory. Intent paths cannot read arbitrary phone files, and uploading to the private lab requires separate user confirmation.
+- The static DEX evidence includes a local SHA-256 of the selected APK, bounded SDK/API reference counts, and explicit notes that bytecode references do not establish execution. The guest bridge refuses to merge mismatched APK hashes or malformed/static evidence.
+- During guest execution ASTER collects bounded 10-second file metadata from the selected app and passive guest-wide TCP/UDP socket samples. These samples cannot observe every file/network/system event; guest-wide endpoints are **not** treated as being sent by the target application.
+- The full rooted Android VM remains outside the phone. Host firewall/VM isolation are not created or guaranteed by ASTER itself. CI tests only static evidence validation, sample parsing, Android UI and harmless guest mocks; real malware testing remains unverified.
