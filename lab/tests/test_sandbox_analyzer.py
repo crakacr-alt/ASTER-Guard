@@ -123,6 +123,24 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(result["restored"])
         self.assertIn("Not all actions", result["coverage_warning"])
 
+    def test_intermediate_samples_remain_scoped_and_not_claim_complete_tracing(self):
+        class Guest:
+            def adb(self, *args, **kwargs):
+                if args[:3]==("shell","sh","-c"):
+                    return "/data/user/0/com.example.test/config.json|42|1700\n"
+                if args[-1]=="/proc/net/tcp":
+                    return (
+                        " sl local_address rem_address st\n"
+                        " 0: 0100007F:2222 08080808:01BB 01\n"
+                    )
+                return " sl local_address rem_address st\n"
+        sample=sandbox.observe_guest_interval(Guest(),"com.example.test",10)
+        self.assertEqual(10,sample["elapsed_seconds"])
+        self.assertEqual(1,len(sample["target_files"]))
+        self.assertEqual(["tcp://8.8.8.8:443"],
+                         sample["guest_wide_network_endpoints"])
+        self.assertIn("not per-PID",sample["scope"])
+
     def test_static_report_accepts_only_matching_apk_sha(self):
         digest="a"*64
         data={

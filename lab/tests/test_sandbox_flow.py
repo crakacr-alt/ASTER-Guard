@@ -61,7 +61,10 @@ class SandboxOrchestrationTests(unittest.TestCase):
                  mock.patch.object(lab,"pid",return_value=123), \
                  mock.patch.object(sandbox_analyzer,"snapshot",
                     side_effect=[fake_snapshot(0),fake_snapshot(1),fake_snapshot(2)]):
-                lab._sandbox_execute(session,apk,"f"*64,0,threading.Event())
+                lab._sandbox_execute(session,apk,"f"*64,0,threading.Event(),
+                    {"schema":"aster-static-v1","sha256":"f"*64,"dex_files":2,
+                     "sdk_references":{"Firebase Analytics":2},
+                     "warning":"Static code only; not runtime evidence"})
             result=lab.sandbox_status()
             self.assertEqual("completed",result["status"])
             self.assertTrue(result["summary"]["restored"])
@@ -74,6 +77,8 @@ class SandboxOrchestrationTests(unittest.TestCase):
             evidence=json.loads(pathlib.Path(
                 lab.artifacts[result["report_json_artifact"]]["path"]).read_text())
             self.assertTrue(evidence["restore"]["verified"])
+            self.assertEqual(2,evidence["static_analysis"]["dex_files"])
+            self.assertEqual(2,evidence["static_analysis"]["sdk_references"]["Firebase Analytics"])
             self.assertEqual(["com.example.test"],
                              evidence["install_delta"]["installed_packages"])
             self.assertIn(("emu","avd","snapshot","load","aster_"+session[:18]),calls)
