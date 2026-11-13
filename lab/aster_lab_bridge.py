@@ -598,7 +598,7 @@ class Lab:
     def _sandbox_execute(self, session_id: str, apk: str, apk_sha: str,
                          seconds: int, cancelled: threading.Event,
                          static_evidence: dict | None = None):
-        from sandbox_analyzer import snapshot, diff, report_json, report_html, summary, utc
+        from sandbox_analyzer import snapshot, diff, observe_guest_interval, report_json, report_html, summary, utc
         checkpoint = "aster_" + session_id[:18]
         report = {
             "format": "aster-sandbox-v1",
@@ -678,15 +678,54 @@ class Lab:
                 timeout=25, limit=3200)
             report["launch_output"] = start_output[:1500]
             pid_history: list[dict] = []
-            # Capture multiple moments rather than pretend endpoint sampling is complete.
+            interval_observations: list[dict] = []
+            previous_files: dict | None = None
+            observed_guest_endpoints: set[str] = set()
+            # These are bounded interval samples, NOT complete syscall instrumentation.
             for second in range(seconds):
                 fail_if_cancelled()
                 if second % 5 == 0 or second == seconds - 1:
                     pid = self.pid(target)
                     pid_history.append({"elapsed_seconds": second, "pid": pid})
-                    event("observe", f"t={second}s · selected PID: {pid}", 45 + int(35 * second/seconds))
+                    event("observe", f"t={second}s · selected PID: {pid}",
+                          45 + int(35 * second/seconds))
+                if second % 10 == 0:
+                    sample = observe_guest_interval(self, target, second)
+                    files = sample["target_files"]
+                    newly_seen = []
+                    modified_seen = []
+                    if previous_files is not None:
+                        newly_seen = sorted(set(files) - set(previous_files))
+                        modified_seen = sorted(
+                            name for name in set(files) & set(previous_files)
+                            if files[name] != previous_files[name]
+                        )
+                    previous_files = files
+                    observed_guest_endpoints.update(
+                        sample["guest_wide_network_endpoints"]
+                    )
+                    interval_observations.append({
+                        "elapsed_seconds": second,
+                        "target_file_count": len(files),
+                        "target_new_files_since_sample": newly_seen[:40],
+                        "target_changed_files_since_sample": modified_seen[:40],
+                        "guest_wide_socket_endpoints": sample[
+                            "guest_wide_network_endpoints"
+                        ][:60],
+                        "sampling_errors": sample["errors"][:6],
+                        "not_complete": True,
+                    })
+                    event("sample", f"t={second}s · files={len(files)} · "
+                          f"guest sockets={len(sample['guest_wide_network_endpoints'])}",
+                          45 + int(35 * second/seconds))
                 cancelled.wait(1)
             report["pid_samples"] = pid_history
+            report["interval_observations"] = interval_observations
+            report["guest_wide_endpoints_seen"] = sorted(observed_guest_endpoints)[:160]
+            report["limitations"].append(
+                "10-second interval file/socket samples cannot observe all transient "
+                "events. Guest-wide sockets must not be attributed to the target app."
+            )
             final_pid = self.pid(target)
             if final_pid:
                 lines, ok = ("", False)
